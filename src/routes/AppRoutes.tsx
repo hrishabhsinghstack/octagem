@@ -1,0 +1,85 @@
+import { RequirePermission } from "@/components/layout/RequirePermission";
+import { RequireWorkflowSetting } from "@/components/layout/RequireWorkflowSetting";
+import { CustomerDetailPanel } from "@/features/customers/CustomerDetailPanel";
+import { CustomerListPage } from "@/features/customers/CustomerListPage";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
+import { PaymentsListPage } from "@/features/finance/PaymentsListPage";
+import { InventoryListPage } from "@/features/inventory/InventoryListPage";
+import { ItemDetailPanel } from "@/features/inventory/ItemDetailPanel";
+import { InvoiceDetailPanel } from "@/features/invoicing/InvoiceDetailPanel";
+import { InvoiceListPage } from "@/features/invoicing/InvoiceListPage";
+import { MemoDetailPanel } from "@/features/memo/MemoDetailPanel";
+import { MemoRegisterPage } from "@/features/memo/MemoRegisterPage";
+import { MemoInDetailPanel } from "@/features/purchasing/MemoInDetailPanel";
+import { PurchaseOrderDetailPanel } from "@/features/purchasing/PurchaseOrderDetailPanel";
+import { PurchaseOrderListPage } from "@/features/purchasing/PurchaseOrderListPage";
+import { VendorBillDetailPanel } from "@/features/purchasing/VendorBillDetailPanel";
+import { VendorBillListPage } from "@/features/purchasing/VendorBillListPage";
+import { QuoteDetailPanel } from "@/features/quotes/QuoteDetailPanel";
+import { QuoteListPage } from "@/features/quotes/QuoteListPage";
+import { ReportsPage } from "@/features/reports/ReportsPage";
+import { SalesOrderDetailPanel } from "@/features/sales/SalesOrderDetailPanel";
+import { SalesOrderListPage } from "@/features/sales/SalesOrderListPage";
+import { SettingsPage } from "@/features/settings/SettingsPage";
+import { VendorDetailPanel } from "@/features/vendors/VendorDetailPanel";
+import { VendorListPage } from "@/features/vendors/VendorListPage";
+import { Route, Routes } from "react-router-dom";
+
+export function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<DashboardPage />} />
+
+      <Route path="/inventory" element={<RequirePermission module="inventory"><InventoryListPage /></RequirePermission>}>
+        <Route path=":id" element={<ItemDetailPanel />} />
+      </Route>
+
+      <Route path="/memos" element={<RequirePermission module="memoOut"><MemoRegisterPage /></RequirePermission>}>
+        <Route path=":id" element={<MemoDetailPanel />} />
+        <Route path="in/:id" element={<RequirePermission module="memoIn"><MemoInDetailPanel /></RequirePermission>} />
+      </Route>
+
+      <Route
+        path="/quotes"
+        element={
+          <RequirePermission module="quotes">
+            <RequireWorkflowSetting check={(s) => s.quoteModuleEnabled}>
+              <QuoteListPage />
+            </RequireWorkflowSetting>
+          </RequirePermission>
+        }
+      >
+        <Route path=":id" element={<QuoteDetailPanel />} />
+      </Route>
+
+      <Route path="/sales-orders" element={<RequirePermission module="salesOrders"><SalesOrderListPage /></RequirePermission>}>
+        <Route path=":id" element={<SalesOrderDetailPanel />} />
+      </Route>
+
+      <Route path="/invoices" element={<RequirePermission module="invoices"><InvoiceListPage /></RequirePermission>}>
+        <Route path=":id" element={<InvoiceDetailPanel />} />
+      </Route>
+
+      <Route path="/customers" element={<RequirePermission module="customers"><CustomerListPage /></RequirePermission>}>
+        <Route path=":id" element={<CustomerDetailPanel />} />
+      </Route>
+
+      <Route path="/vendors" element={<RequirePermission module="vendors"><VendorListPage /></RequirePermission>}>
+        <Route path=":id" element={<VendorDetailPanel />} />
+      </Route>
+
+      <Route path="/purchase-orders" element={<RequirePermission module="purchaseOrders"><PurchaseOrderListPage /></RequirePermission>}>
+        <Route path=":id" element={<PurchaseOrderDetailPanel />} />
+      </Route>
+
+      <Route path="/payments" element={<RequirePermission module="payments"><PaymentsListPage /></RequirePermission>} />
+
+      <Route path="/vendor-bills" element={<RequirePermission module="vendorBills"><VendorBillListPage /></RequirePermission>}>
+        <Route path=":id" element={<VendorBillDetailPanel />} />
+      </Route>
+
+      <Route path="/reports" element={<RequirePermission module="reports"><ReportsPage /></RequirePermission>} />
+      <Route path="/settings" element={<SettingsPage />} />
+    </Routes>
+  );
+}

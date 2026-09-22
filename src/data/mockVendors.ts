@@ -1,0 +1,40 @@
+import type { Vendor } from "@/types/party";
+
+export const mockVendors: Vendor[] = [
+  {
+    id: "V-1001",
+    name: "Continental Diamond Supply",
+    contact: "Robert Klein",
+    phone: "(212) 555-0210",
+    email: "robert@continentaldiamond.example",
+    address: "580 5th Ave, New York, NY 10036",
+    paymentTerms: "Net 30",
+    currency: "USD",
+    notes: "Primary source for GIA-certified rounds and ovals.",
+    createdAt: "2026-01-14",
+  },
+  {
+    id: "V-1002",
+    name: "Meridian Metal Works",
+    contact: "Anjali Desai",
+    phone: "(212) 555-0287",
+    email: "anjali@meridianmetal.example",
+    address: "62 W 47th St, New York, NY 10036",
+    paymentTerms: "Net 15",
+    currency: "USD",
+    notes: "Findings, mountings and casting for jewelry production.",
+    createdAt: "2026-02-02",
+  },
+  {
+    id: "V-1003",
+    name: "Alpine Timepiece Traders",
+    contact: "Marco Bianchi",
+    phone: "+41 22 555 0134",
+    email: "marco@alpinetimepiece.example",
+    address: "Rue du Rhône 22, Geneva, CH-1204",
+    paymentTerms: "Net 30",
+    currency: "EUR",
+    notes: "Pre-owned watch sourcing, authenticated before shipment.",
+    createdAt: "2026-03-11",
+  },
+];
