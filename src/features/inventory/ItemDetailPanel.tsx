@@ -11,7 +11,10 @@ import { useAuth } from "@/contexts/authContext";
 import { ItemMediaPanel } from "@/features/inventory/ItemMediaPanel";
 import { ReceiveItemDialog } from "@/features/inventory/ReceiveItemDialog";
 import { IssueMemoDialog } from "@/features/memo/IssueMemoDialog";
+import { listFieldsForCategory } from "@/lib/api/catalogApi";
 import { listCustomFieldDefinitions } from "@/lib/api/customFieldApi";
+import { getPath, isBlank } from "@/lib/inventory/fieldValues";
+import type { FieldDefinition } from "@/types/catalog";
 import { deleteItem, duplicateItem, getItem } from "@/lib/api/inventoryApi";
 import { returnItemToVendor } from "@/lib/api/memoInApi";
 import { getVendor } from "@/lib/api/vendorApi";
@@ -26,7 +29,6 @@ import { useNavigate, useParams } from "react-router-dom";
 const STATUS_VARIANT: Record<ItemStatus, "default" | "secondary" | "outline" | "success" | "warning" | "destructive"> = {
   Available: "success",
   "On memo out": "warning",
-  Reserved: "secondary",
   "Verification hold": "outline",
   Sold: "outline",
   "Returned to vendor": "destructive",
@@ -284,6 +286,49 @@ function CustomFieldsSpec({ item }: { item: InventoryItem }) {
   );
 }
 
+/**
+ * Tenant-category and market-pack fields (anything stored under item.attributes). Rendered from the
+ * catalog, so a field an admin adds shows here without code changes.
+ */
+function AttributeFieldsSpec({ item }: { item: InventoryItem }) {
+  const [fields, setFields] = useState<FieldDefinition[]>([]);
+
+  useEffect(() => {
+    listFieldsForCategory(item.category).then((all) => setFields(all.filter((f) => f.path.startsWith("attributes."))));
+  }, [item.category]);
+
+  const format = (field: FieldDefinition, value: unknown) => {
+    if (field.type === "boolean") return value ? "Yes" : "No";
+    if (field.type === "date") return formatDateShort(String(value));
+    if (Array.isArray(value)) return value.join(", ");
+    return field.unit ? `${value}${field.unit === "%" ? "%" : ` ${field.unit}`}` : String(value);
+  };
+
+  const groups: { title: string; fields: FieldDefinition[] }[] = [
+    { title: "Details", fields: fields.filter((f) => !f.pack) },
+    { title: "Market", fields: fields.filter((f) => f.pack) },
+  ];
+
+  return (
+    <>
+      {groups.map(({ title, fields: groupFields }) => {
+        const populated = groupFields.filter((f) => !isBlank(getPath(item, f.path)));
+        if (populated.length === 0) return null;
+        return (
+          <div key={title}>
+            <SectionLabel>{title}</SectionLabel>
+            <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
+              {populated.map((f) => (
+                <Field key={f.key} label={f.label} value={format(f, getPath(item, f.path))} />
+              ))}
+            </dl>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function PricingTab({ item }: { item: InventoryItem }) {
   const margin = item.askingPrice ? Math.round(((item.askingPrice - item.cost) / item.askingPrice) * 100) : 0;
 
@@ -365,7 +410,7 @@ export function ItemDetailPanel() {
 
   const close = () => navigate("/inventory");
 
-  const canIssueMemo = item ? item.status === "Available" || item.status === "Reserved" : false;
+  const canIssueMemo = item ? item.status === "Available" : false;
   const canReturnToVendor = item ? item.ownership === "CONSIGNED_IN" && item.status !== "Sold" && item.status !== "Returned to vendor" : false;
 
   const handleReturnToVendor = async () => {
@@ -486,12 +531,14 @@ export function ItemDetailPanel() {
               <CardContent>
                 <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
                   <Field label="Identity model" value={item.identityModel} />
+                  <Field label="Pieces" value={item.quantity} />
                   <Field label="Received" value={formatDateShort(item.receivedAt)} />
                 </dl>
                 <Separator className="my-4" />
                 {item.diamond && <DiamondSpec item={item} />}
                 {item.jewelry && <JewelrySpec item={item} />}
                 {item.watch && <WatchSpec item={item} />}
+                <AttributeFieldsSpec item={item} />
                 <CustomFieldsSpec item={item} />
               </CardContent>
             </Card>

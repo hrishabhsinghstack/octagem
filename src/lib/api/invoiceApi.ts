@@ -1,9 +1,7 @@
 import { getCurrentFxRate, getTaxRatePercent } from "@/lib/currency";
 import { update as updateItem } from "@/lib/store/inventoryStore";
 import * as store from "@/lib/store/invoiceStore";
-import { markInvoiced } from "@/lib/api/salesOrderApi";
 import { createVendorBillsForConsignedSales } from "@/lib/api/vendorBillApi";
-import type { SalesOrder } from "@/types/salesOrder";
 import type { Invoice, InvoiceLine, InvoiceSource } from "@/types/invoice";
 import type { InventoryItem } from "@/types/inventory";
 
@@ -97,31 +95,6 @@ export async function createDirectInvoice(payload: DirectInvoicePayload, actor =
     actor,
     id
   );
-  return invoice;
-}
-
-/** Only lines marked fulfilled on the Sales Order are invoiced — matches §16.2's "may be partial, generating multiple invoices against one order." Currency/rate are inherited from the order (struck at Quote or Sales Order creation); tax is selected here since Sales Orders don't carry a tax rate. */
-export async function createInvoiceFromSalesOrder(order: SalesOrder, items: InventoryItem[], taxRateId?: string, actor = "Jordan Miller"): Promise<Invoice> {
-  const id = store.nextInvoiceId();
-  const fulfilledLines = order.lines.filter((l) => l.fulfilled);
-  const lines: InvoiceLine[] = fulfilledLines.map((line, index) => {
-    const item = items.find((i) => i.id === line.itemId);
-    return { id: `${id}-L${index + 1}`, itemId: line.itemId, description: item ? `${item.code} · ${item.title}` : line.itemId, unitPrice: line.lineTotal, quantity: line.quantity, lineTotal: line.lineTotal };
-  });
-  const invoice = buildInvoice(id, order.customerId, order.salesperson, "SalesOrder", order.id, lines, {
-    currency: order.currency,
-    fxRateToBase: order.fxRateToBase,
-    taxRateId,
-  });
-  store.insert(invoice);
-  const fulfilledItems = fulfilledLines.map((l) => items.find((i) => i.id === l.itemId)).filter((i): i is InventoryItem => Boolean(i));
-  await markItemsSold(
-    fulfilledItems,
-    `Sales Order ${order.id} invoiced — ${id}.`,
-    actor,
-    id
-  );
-  await markInvoiced(order.id, id);
   return invoice;
 }
 

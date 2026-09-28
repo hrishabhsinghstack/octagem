@@ -41,7 +41,6 @@ const VENDOR_BILL_STATUS_VARIANT: Record<VendorBillStatus, "default" | "secondar
 const ITEM_STATUS_VARIANT: Record<ItemStatus, "default" | "secondary" | "outline" | "success" | "warning" | "destructive"> = {
   Available: "success",
   "On memo out": "warning",
-  Reserved: "secondary",
   "Verification hold": "outline",
   Sold: "outline",
   "Returned to vendor": "destructive",
@@ -201,7 +200,7 @@ export function VendorDetailPanel() {
                 </TableHeader>
                 <TableBody>
                   {memoIns.map((record) => (
-                    <TableRow key={record.id} className="cursor-pointer" onClick={() => navigate(`/memos/in/${record.id}`)}>
+                    <TableRow key={record.id} className="cursor-pointer" onClick={() => navigate(`/memo-in/${record.id}`)}>
                       <TableCell className="font-medium">{record.id}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{formatDateShort(record.dueDate)}</TableCell>
                       <TableCell>

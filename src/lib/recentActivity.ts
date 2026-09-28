@@ -1,4 +1,4 @@
-export type RecentActivityType = "inventory" | "quote" | "salesOrder" | "invoice" | "purchaseOrder" | "vendorBill" | "memo" | "memoIn" | "customer" | "vendor";
+export type RecentActivityType = "inventory" | "invoice" | "purchaseOrder" | "vendorBill" | "memo" | "memoIn" | "customer" | "vendor";
 
 export interface RecentActivityEntry {
   type: RecentActivityType;

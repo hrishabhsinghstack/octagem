@@ -48,7 +48,7 @@ export async function updateBusinessProfile(profile: BusinessProfile): Promise<B
   return profile;
 }
 
-const DEFAULT_WORKFLOW: WorkflowSettings = { quoteModuleEnabled: true, requireQuoteBeforeSalesOrder: false };
+const DEFAULT_WORKFLOW: WorkflowSettings = {};
 
 export async function getWorkflowSettings(): Promise<WorkflowSettings> {
   try {
@@ -60,8 +60,6 @@ export async function getWorkflowSettings(): Promise<WorkflowSettings> {
 }
 
 export async function updateWorkflowSettings(settings: WorkflowSettings): Promise<WorkflowSettings> {
-  // Requiring a hidden module before Sales Orders would strand order creation entirely.
-  const consistent: WorkflowSettings = settings.quoteModuleEnabled ? settings : { ...settings, requireQuoteBeforeSalesOrder: false };
-  localStorage.setItem(WORKFLOW_KEY, JSON.stringify(consistent));
-  return consistent;
+  localStorage.setItem(WORKFLOW_KEY, JSON.stringify(settings));
+  return settings;
 }

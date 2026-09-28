@@ -1,30 +1,14 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { getWorkflowSettings, updateWorkflowSettings } from "@/lib/api/settingsApi";
-import { showSuccess } from "@/lib/utils";
-import type { WorkflowSettings as WorkflowSettingsType } from "@/types/settings";
-import { useEffect, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Workflow } from "lucide-react";
 
+/**
+ * Empty by design, for now. The two toggles that lived here gated the Quotes and Sales Order
+ * modules; those documents were removed when the sales chain became Memo → Invoice. The panel is
+ * kept rather than deleted because it — together with WorkflowSettings in types/settings.ts and
+ * RequireWorkflowSetting — is the wired-up seam the next optional process step drops into, and
+ * rebuilding that seam costs more than carrying an empty screen.
+ */
 export function WorkflowSettings() {
-  const [settings, setSettings] = useState<WorkflowSettingsType>({ quoteModuleEnabled: true, requireQuoteBeforeSalesOrder: false });
-
-  useEffect(() => {
-    getWorkflowSettings().then(setSettings);
-  }, []);
-
-  const toggleModule = async (checked: boolean) => {
-    const updated = await updateWorkflowSettings({ ...settings, quoteModuleEnabled: checked });
-    setSettings(updated);
-    showSuccess("Saved", checked ? "Quotes module enabled." : "Quotes module hidden from the app.");
-  };
-
-  const toggleQuote = async (checked: boolean) => {
-    const updated = { ...settings, requireQuoteBeforeSalesOrder: checked };
-    setSettings(updated);
-    await updateWorkflowSettings(updated);
-    showSuccess("Saved", checked ? "Quotes are now required before a Sales Order." : "Sales Orders can now be created directly.");
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -33,28 +17,16 @@ export function WorkflowSettings() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Sales process</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <label className="flex items-start justify-between gap-4 cursor-pointer">
-            <span>
-              <span className="text-sm font-medium block">Enable Quotes module</span>
-              <span className="text-xs text-muted-foreground block mt-0.5">
-                Off: Quotes disappears from the sidebar entirely, for businesses that don't quote. On (default): Quotes is available as normal.
-              </span>
-            </span>
-            <Switch checked={settings.quoteModuleEnabled} onCheckedChange={toggleModule} className="shrink-0 mt-0.5" />
-          </label>
-          <label className={`flex items-start justify-between gap-4 ${settings.quoteModuleEnabled ? "cursor-pointer" : "opacity-50"}`}>
-            <span>
-              <span className="text-sm font-medium block">Require a Quote before a Sales Order</span>
-              <span className="text-xs text-muted-foreground block mt-0.5">
-                On: sales staff start from a Quote, which becomes a Sales Order once accepted. Off: Sales Orders can be created directly.
-              </span>
-            </span>
-            <Switch checked={settings.requireQuoteBeforeSalesOrder} onCheckedChange={toggleQuote} disabled={!settings.quoteModuleEnabled} className="shrink-0 mt-0.5" />
-          </label>
+        <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-muted">
+            <Workflow className="h-5 w-5 text-muted-foreground" />
+          </span>
+          <div>
+            <p className="text-sm font-medium">No optional steps to configure</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md">
+              Your sales process runs Memo → Invoice, with direct invoicing as the other way in. Neither step is optional, so there is nothing to switch off here yet.
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

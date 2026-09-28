@@ -6,25 +6,28 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { categoryIcon } from "@/components/catalog/categoryIcons";
 import { Can } from "@/components/rbac/Can";
 import { useAuth } from "@/contexts/authContext";
 import { ReceiveItemDialog } from "@/features/inventory/ReceiveItemDialog";
+import { ImportWizard } from "@/features/inventory/import/ImportWizard";
 import { IssueMemoDialog } from "@/features/memo/IssueMemoDialog";
+import { listCategories } from "@/lib/api/catalogApi";
+import { exportRows, getWorkbookSpec } from "@/lib/api/importApi";
 import { deleteItem, duplicateItem, listInventory } from "@/lib/api/inventoryApi";
 import { returnItemToVendor } from "@/lib/api/memoInApi";
 import { getVendor } from "@/lib/api/vendorApi";
 import { formatCurrency, showError, showSuccess } from "@/lib/utils";
+import type { CategoryDefinition } from "@/types/catalog";
 import type { InventoryCategory, InventoryItem, ItemStatus } from "@/types/inventory";
-import { Copy, Diamond, Gem, Handshake, MoreVertical, PackagePlus, Pencil, Search, Trash2, Undo2, Watch } from "lucide-react";
+import { Copy, Download, FileUp, Handshake, MoreVertical, PackagePlus, Pencil, Search, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 
-const CATEGORY_ICON: Record<InventoryCategory, typeof Diamond> = { Diamond: Diamond, Jewelry: Gem, Watch: Watch };
 
 const STATUS_VARIANT: Record<ItemStatus, "default" | "secondary" | "outline" | "success" | "warning" | "destructive"> = {
   Available: "success",
   "On memo out": "warning",
-  Reserved: "secondary",
   "Verification hold": "outline",
   Sold: "outline",
   "Returned to vendor": "destructive",
@@ -34,6 +37,7 @@ export function InventoryListPage() {
   const navigate = useNavigate();
   const { session, can, scopeFor } = useAuth();
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [categories, setCategories] = useState<CategoryDefinition[]>([]);
   const [category, setCategory] = useState<InventoryCategory | "All">("All");
   const [status, setStatus] = useState<ItemStatus | "All">("All");
   const [query, setQuery] = useState("");
@@ -74,7 +78,17 @@ export function InventoryListPage() {
 
   useEffect(() => {
     refresh();
+    // Include inactive categories so items already filed under one still resolve their icon and tab.
+    listCategories(false).then(setCategories);
   }, []);
+
+  const iconFor = (categoryKey: string) => categoryIcon(categories.find((c) => c.key === categoryKey)?.icon);
+
+  /** Active categories, plus any inactive one that still holds stock. */
+  const categoryTabs = useMemo(
+    () => categories.filter((c) => c.active || items.some((item) => item.category === c.key)),
+    [categories, items]
+  );
 
   const scope = scopeFor("inventory");
 
@@ -90,10 +104,30 @@ export function InventoryListPage() {
     });
   }, [items, category, status, query, scope, session?.name]);
 
+  const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  /** Exports what the filters show, in the import template's layout, so the file can be edited and re-imported. */
+  const handleExport = async () => {
+    if (filtered.length === 0) return;
+    setExporting(true);
+    try {
+      const categoryKeys = [...new Set(filtered.map((item) => item.category))];
+      const [{ writeWorkbook, downloadFile }, spec] = await Promise.all([import("@/lib/inventory/spreadsheet"), getWorkbookSpec(categoryKeys)]);
+      const buffer = await writeWorkbook(spec, await exportRows(filtered, spec));
+      downloadFile(buffer, `inventory-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      showSuccess("Exported", `${filtered.length} item${filtered.length === 1 ? "" : "s"} — edit in Excel and import with “Add new and update existing”.`);
+    } catch (error: any) {
+      showError("Export failed", error?.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const counts = useMemo(() => {
-    const base: Record<InventoryCategory | "All", number> = { All: items.length, Diamond: 0, Jewelry: 0, Watch: 0 };
+    const base: Record<string, number> = { All: items.length };
     items.forEach((item) => {
-      base[item.category] += 1;
+      base[item.category] = (base[item.category] ?? 0) + 1;
     });
     return base;
   }, [items]);
@@ -106,19 +140,34 @@ export function InventoryListPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Inventory</h1>
           <p className="text-muted-foreground mt-1">Every diamond, jewelry piece and watch — its identity, custody and value in one place.</p>
         </div>
-        <Can module="inventory" action="create">
-          <Button onClick={() => setReceiveOpen(true)}>
-            <PackagePlus className="h-4 w-4 mr-2" /> Receive inventory
-          </Button>
-        </Can>
+        <div className="flex items-center gap-2">
+          <Can module="inventory" action="export">
+            <Button variant="outline" onClick={handleExport} disabled={exporting || filtered.length === 0} title="Export the items shown">
+              <Download className="h-4 w-4 mr-2" /> {exporting ? "Exporting…" : "Export"}
+            </Button>
+          </Can>
+          <Can module="inventory" action="import">
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <FileUp className="h-4 w-4 mr-2" /> Import
+            </Button>
+          </Can>
+          <Can module="inventory" action="create">
+            <Button onClick={() => setReceiveOpen(true)}>
+              <PackagePlus className="h-4 w-4 mr-2" /> Receive inventory
+            </Button>
+          </Can>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs value={category} onValueChange={(value) => setCategory(value as InventoryCategory | "All")}>
           <TabsList>
-            {(["All", "Diamond", "Jewelry", "Watch"] as const).map((option) => (
-              <TabsTrigger key={option} value={option}>
-                {option} <span className="ml-1.5 text-xs text-muted-foreground">{counts[option]}</span>
+            <TabsTrigger value="All">
+              All <span className="ml-1.5 text-xs text-muted-foreground">{counts.All}</span>
+            </TabsTrigger>
+            {categoryTabs.map((option) => (
+              <TabsTrigger key={option.key} value={option.key}>
+                {option.label} <span className="ml-1.5 text-xs text-muted-foreground">{counts[option.key] ?? 0}</span>
               </TabsTrigger>
             ))}
           </TabsList>
@@ -137,7 +186,6 @@ export function InventoryListPage() {
               <SelectItem value="All">All statuses</SelectItem>
               <SelectItem value="Available">Available</SelectItem>
               <SelectItem value="On memo out">On memo out</SelectItem>
-              <SelectItem value="Reserved">Reserved</SelectItem>
               <SelectItem value="Verification hold">Verification hold</SelectItem>
               <SelectItem value="Sold">Sold</SelectItem>
             </SelectContent>
@@ -160,9 +208,9 @@ export function InventoryListPage() {
           </TableHeader>
           <TableBody>
             {filtered.map((item) => {
-              const Icon = CATEGORY_ICON[item.category];
+              const Icon = iconFor(item.category);
               const primaryPhoto = item.media.find((m) => m.isPrimary) ?? item.media[0];
-              const canIssueMemo = item.status === "Available" || item.status === "Reserved";
+              const canIssueMemo = item.status === "Available";
               return (
                 <TableRow key={item.id} className="cursor-pointer" onClick={() => navigate(`/inventory/${item.id}`)}>
                   <TableCell>
@@ -242,6 +290,7 @@ export function InventoryListPage() {
       </Card>
 
       <ReceiveItemDialog open={receiveOpen} onOpenChange={setReceiveOpen} onSaved={refresh} />
+      <ImportWizard open={importOpen} onOpenChange={setImportOpen} onImported={refresh} />
       <ReceiveItemDialog open={Boolean(editingItem)} onOpenChange={(open) => !open && setEditingItem(null)} editItem={editingItem} onSaved={refresh} />
       <IssueMemoDialog open={Boolean(memoItemId)} onOpenChange={(open) => !open && setMemoItemId(null)} onIssued={refresh} preselectedItemId={memoItemId ?? undefined} />
     </div>

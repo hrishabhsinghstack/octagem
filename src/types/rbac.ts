@@ -9,8 +9,6 @@ export type PermissionModule =
   | "inventory"
   | "memoOut"
   | "memoIn"
-  | "quotes"
-  | "salesOrders"
   | "invoices"
   | "purchaseOrders"
   | "vendorBills"
@@ -18,14 +16,13 @@ export type PermissionModule =
   | "customers"
   | "vendors"
   | "reports"
+  | "catalog"
   | "usersRoles";
 
 export const PERMISSION_MODULES: { key: PermissionModule; label: string }[] = [
   { key: "inventory", label: "Inventory" },
   { key: "memoOut", label: "Memo Out" },
   { key: "memoIn", label: "Memo In" },
-  { key: "quotes", label: "Quotes" },
-  { key: "salesOrders", label: "Sales Orders" },
   { key: "invoices", label: "Invoices" },
   { key: "purchaseOrders", label: "Purchase Orders" },
   { key: "vendorBills", label: "Vendor Bills" },
@@ -33,6 +30,7 @@ export const PERMISSION_MODULES: { key: PermissionModule; label: string }[] = [
   { key: "customers", label: "Customers" },
   { key: "vendors", label: "Vendors" },
   { key: "reports", label: "Reports" },
+  { key: "catalog", label: "Catalog & Master Data" },
   { key: "usersRoles", label: "Users & Roles" },
 ];
 

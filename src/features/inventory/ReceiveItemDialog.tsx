@@ -1,19 +1,38 @@
+import { CatalogFieldInput } from "@/components/catalog/CatalogFieldInput";
+import { categoryIcon } from "@/components/catalog/categoryIcons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { listCustomFieldDefinitions } from "@/lib/api/customFieldApi";
-import { receiveItem, updateItemDetails } from "@/lib/api/inventoryApi";
-import { getList, listLocationPaths } from "@/lib/store/masterDataStore";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { useAuth } from "@/contexts/authContext";
+import { BomEditor, type BomLists } from "@/features/inventory/BomEditor";
+import { getCatalog, getMarketSettings, listCategories, suggestStockNumber } from "@/lib/api/catalogApi";
+import { listInventory, receiveItem, updateItemDetails } from "@/lib/api/inventoryApi";
+import {
+  CARRY_FORWARD_KEYS,
+  SECTION_ORDER,
+  applyValues,
+  copyableValues,
+  fieldSuggestions,
+  fieldsForSection,
+  fieldsInSections,
+  itemToValues,
+  sameRaw,
+  validateForm,
+  visibleFields,
+  withTypedDefaults,
+  type RawValues,
+} from "@/lib/inventory/catalogForm";
+import { findUniqueConflicts, isBlank, parseNumber, type DateOrder } from "@/lib/inventory/fieldValues";
+import { fieldsForCategory, optionsForField, type CatalogState, type OptionLookups } from "@/lib/inventory/registry";
+import { addListEntry, getList, listLocationPaths } from "@/lib/store/masterDataStore";
 import { cn, formatCurrency, showError, showSuccess } from "@/lib/utils";
-import type { CustomFieldDefinition, CustomFieldValue } from "@/types/customField";
-import type { DiamondAttributes, IdentityModel, InventoryCategory, InventoryItem, JewelryAttributes, JewelryComponent, WatchAttributes } from "@/types/inventory";
-import type { MasterListEntry } from "@/types/masterData";
-import { Check, Diamond as DiamondIcon, Gem, Plus, Trash2, Watch as WatchIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import type { CategoryDefinition, FieldDefinition, FieldSection, FieldValue } from "@/types/catalog";
+import type { InventoryCategory, InventoryItem, JewelryComponent } from "@/types/inventory";
+import type { MasterListEntry, MasterListKey } from "@/types/masterData";
+import { ChevronDown, Copy } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface ReceiveItemDialogProps {
   open: boolean;
@@ -25,264 +44,391 @@ interface ReceiveItemDialogProps {
   prefill?: { vendorId?: string; purchaseOrderId?: string; memoInId?: string; category?: InventoryCategory; cost?: number; priceBasis?: string };
 }
 
-const STEPS = ["Identity & Source", "Specification", "Pricing & Receive"] as const;
-type Step = 0 | 1 | 2;
-
-function Field({ label, required, className, children }: { label: string; required?: boolean; className?: string; children: React.ReactNode }) {
-  return (
-    <div className={cn("space-y-1", className)}>
-      <Label className="text-xs text-muted-foreground">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {children}
-    </div>
-  );
-}
-
-const emptyComponent = (): JewelryComponent => ({ id: crypto.randomUUID(), type: "Diamond", shape: "", color: "", clarity: "", quantity: 1, weightCarats: undefined, isCenter: false });
-
-function MasterSelect({
-  label,
-  value,
-  onChange,
-  options,
-  className,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: string[];
-  className?: string;
-  placeholder?: string;
-}) {
-  return (
-    <Field label={label} className={className}>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger>
-          <SelectValue placeholder={placeholder ?? "Select…"} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option} value={option}>
-              {option}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </Field>
-  );
-}
-
-const CATEGORY_META: Record<InventoryCategory, { icon: typeof DiamondIcon; placeholder: string }> = {
-  Diamond: { icon: DiamondIcon, placeholder: "D-1200" },
-  Jewelry: { icon: Gem, placeholder: "J-3100" },
-  Watch: { icon: WatchIcon, placeholder: "W-4000" },
+const SECTION_TITLES: Record<FieldSection, string> = {
+  identity: "Identity & source",
+  specification: "Specification",
+  certificate: "Certificate",
+  components: "Components",
+  market: "Market",
+  custom: "Custom fields",
+  pricing: "Pricing",
 };
 
+/** Sections summarised in the right-hand rail as "what this piece is". */
+const SPEC_SECTIONS: FieldSection[] = ["specification", "certificate"];
+
+/** Fields that read better across more of the grid width. */
+const WIDE_FIELDS = new Set(["title", "description", "location"]);
+
+/** The last item saved in this session, per category — the source for "Copy from last item". */
+const lastSaved = new Map<string, { raw: RawValues; components: JewelryComponent[] }>();
+
+/** Master lists read once per dialog open (and re-read after an inline add), not on every keystroke. */
+function cachedLookups(): OptionLookups {
+  const lists = new Map<string, MasterListEntry[]>();
+  let locations: string[] | undefined;
+  return {
+    getList: (key) => {
+      if (!lists.has(key)) lists.set(key, getList(key as MasterListKey));
+      return lists.get(key)!;
+    },
+    locationPaths: () => (locations ??= listLocationPaths().map((l) => l.path)),
+  };
+}
+
+const EMPTY_CATALOG: CatalogState = { categories: [], overrides: {}, tenantFields: [], customFields: [], enabledPacks: [] };
+
 export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefill }: ReceiveItemDialogProps) {
+  const { can } = useAuth();
   const isEditing = Boolean(editItem);
-  const [step, setStep] = useState<Step>(0);
-  const [category, setCategory] = useState<InventoryCategory>("Diamond");
-  const [identityModel, setIdentityModel] = useState<IdentityModel>("UNIQUE");
-  const [code, setCode] = useState("");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [cost, setCost] = useState("");
-  const [askingPrice, setAskingPrice] = useState("");
+  const isConsignment = !isEditing && Boolean(prefill?.memoInId);
+  const canAddMasterData = can("catalog", "edit");
+
+  const [catalog, setCatalog] = useState<CatalogState>(EMPTY_CATALOG);
+  const [categories, setCategories] = useState<CategoryDefinition[]>([]);
+  const [dateOrder, setDateOrder] = useState<DateOrder>("MDY");
+  const [existingItems, setExistingItems] = useState<InventoryItem[]>([]);
+  const [listVersion, setListVersion] = useState(0);
+
+  const [categoryKey, setCategoryKey] = useState<string>("");
+  const [raw, setRaw] = useState<RawValues>({});
+  const [original, setOriginal] = useState<RawValues | undefined>(undefined);
+  const [components, setComponents] = useState<JewelryComponent[]>([]);
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+  /**
+   * Set on the first save attempt. Until then a field shows its error only once the user has
+   * touched it, so a fresh form isn't a wall of red; afterwards everything wrong is visible at once.
+   * This replaced the wizard's per-step `attempted` set, which had the same intent but could only
+   * reveal errors on steps the user had already walked through.
+   */
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [codeTouched, setCodeTouched] = useState(false);
   const [consignmentValue, setConsignmentValue] = useState("");
   const [consignmentPriceBasis, setConsignmentPriceBasis] = useState("");
   const [saving, setSaving] = useState(false);
+  /** Sections whose "More details" fields the user has opened. */
+  const [expanded, setExpanded] = useState<Set<FieldSection>>(new Set());
+  /** The scrolling body, so a failed save can bring the first bad field into view. */
+  const bodyRef = useRef<HTMLDivElement>(null);
 
-  const isConsignment = Boolean(prefill?.memoInId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const lookups = useMemo(cachedLookups, [open, listVersion]);
+  const category = categories.find((c) => c.key === categoryKey) ?? catalog.categories.find((c) => c.key === categoryKey);
 
-  const [diamond, setDiamond] = useState<Partial<DiamondAttributes>>({ shape: "Round", color: "", clarity: "", lab: "GIA", certificateNumber: "", isLabGrown: false });
-  const [jewelry, setJewelry] = useState<Partial<JewelryAttributes>>({ styleNumber: "", metalType: "Gold", grossWeightGrams: 0 });
-  const [components, setComponents] = useState<JewelryComponent[]>([]);
-  const [watch, setWatch] = useState<Partial<WatchAttributes>>({ brand: "", referenceNumber: "", serialNumber: "", hasBox: false, hasPapers: false, conditionGrade: "Excellent" });
+  const fields = useMemo(() => {
+    const all = fieldsForCategory(catalog, categoryKey);
+    // A consignment receipt carries no cost layer — consignment value replaces cost on the pricing step.
+    return isConsignment ? all.filter((f) => f.key !== "cost") : all;
+  }, [catalog, categoryKey, isConsignment]);
 
-  const [diamondShapes, setDiamondShapes] = useState<string[]>([]);
-  const [labs, setLabs] = useState<string[]>([]);
-  const [treatments, setTreatments] = useState<string[]>([]);
-  const [fancyColorIntensities, setFancyColorIntensities] = useState<string[]>([]);
-  const [metalTypes, setMetalTypes] = useState<string[]>([]);
-  const [metalKarats, setMetalKarats] = useState<MasterListEntry[]>([]);
-  const [metalColors, setMetalColors] = useState<string[]>([]);
-  const [jewelryGroups, setJewelryGroups] = useState<string[]>([]);
-  const [jewelrySubCategories, setJewelrySubCategories] = useState<string[]>([]);
-  const [settingTypes, setSettingTypes] = useState<string[]>([]);
-  const [gemstoneTypes, setGemstoneTypes] = useState<string[]>([]);
-  const [watchBrands, setWatchBrands] = useState<string[]>([]);
-  const [watchMovements, setWatchMovements] = useState<string[]>([]);
-  const [watchCaseMaterials, setWatchCaseMaterials] = useState<string[]>([]);
-  const [watchFeatureOptions, setWatchFeatureOptions] = useState<string[]>([]);
-  const [locationOptions, setLocationOptions] = useState<string[]>([]);
-  const [customFieldDefinitions, setCustomFieldDefinitions] = useState<CustomFieldDefinition[]>([]);
-  const [customFieldValues, setCustomFieldValues] = useState<Record<string, CustomFieldValue>>({});
+  const optionsFor = (field: FieldDefinition, resolved: Record<string, FieldValue>) => optionsForField(field, resolved, category, lookups);
 
-  const applicableCustomFields = customFieldDefinitions.filter((d) => d.active && (d.appliesTo === "All" || d.appliesTo === category));
+  /* ------------------------------------------------------------ open / reset */
+
+  const receivingLocation = (paths: string[]) => paths.find((p) => p.toLowerCase().includes("receiving")) ?? paths[0] ?? "";
+
+  const freshValues = (target: CategoryDefinition | undefined, carry: RawValues = {}): RawValues => ({
+    identityModel: target?.defaultIdentityModel,
+    location: receivingLocation(lookups.locationPaths()),
+    ...(prefill?.cost !== undefined && !prefill.memoInId ? { cost: String(prefill.cost) } : {}),
+    ...carry,
+  });
 
   useEffect(() => {
     if (!open) return;
-    listCustomFieldDefinitions().then(setCustomFieldDefinitions);
-    setDiamondShapes(getList("diamondShapes").map((e) => e.label));
-    setLabs(getList("certificationLabs").map((e) => e.label));
-    setTreatments(getList("diamondTreatments").map((e) => e.label));
-    setFancyColorIntensities(getList("fancyColorIntensities").map((e) => e.label));
-    setMetalTypes(getList("metalTypes").map((e) => e.label));
-    setMetalKarats(getList("metalKarats"));
-    setMetalColors(getList("metalColors").map((e) => e.label));
-    setJewelryGroups(getList("jewelryGroups").map((e) => e.label));
-    setJewelrySubCategories(getList("jewelrySubCategories").map((e) => e.label));
-    setSettingTypes(getList("settingTypes").map((e) => e.label));
-    setGemstoneTypes(getList("gemstoneTypes").map((e) => e.label));
-    setWatchBrands(getList("watchBrands").map((e) => e.label));
-    setWatchMovements(getList("watchMovements").map((e) => e.label));
-    setWatchCaseMaterials(getList("watchCaseMaterials").map((e) => e.label));
-    setWatchFeatureOptions(getList("watchFeatures").map((e) => e.label));
-    const paths = listLocationPaths().map((l) => l.path);
-    setLocationOptions(paths);
-
-    if (editItem) {
-      setCategory(editItem.category);
-      setIdentityModel(editItem.identityModel);
-      setCode(editItem.code);
-      setTitle(editItem.title);
-      setDescription(editItem.description);
-      setLocation(editItem.location);
-      setCost(String(editItem.cost));
-      setAskingPrice(String(editItem.askingPrice));
-      if (editItem.diamond) setDiamond(editItem.diamond);
-      if (editItem.jewelry) {
-        setJewelry(editItem.jewelry);
-        setComponents(editItem.jewelry.components);
+    let cancelled = false;
+    Promise.all([getCatalog(), listCategories(), getMarketSettings(), listInventory()]).then(([state, active, market, items]) => {
+      if (cancelled) return;
+      setCatalog(state);
+      setCategories(active);
+      setDateOrder(market.dateOrder);
+      setExistingItems(items);
+      setTouched(new Set());
+      setSubmitAttempted(false);
+      setCodeTouched(false);
+      setExpanded(new Set());
+      if (editItem) {
+        const values = itemToValues(editItem, fieldsForCategory(state, editItem.category));
+        setCategoryKey(editItem.category);
+        setRaw(values);
+        setOriginal(values);
+        setComponents(editItem.jewelry?.components ?? []);
+      } else {
+        const initial = active.find((c) => c.key === prefill?.category) ?? active[0];
+        setCategoryKey(initial?.key ?? "");
+        setRaw(freshValues(initial));
+        setOriginal(undefined);
+        setComponents([]);
+        setConsignmentValue("");
+        setConsignmentPriceBasis(prefill?.priceBasis ?? "");
       }
-      if (editItem.watch) setWatch(editItem.watch);
-      setCustomFieldValues(editItem.customFields ?? {});
-    } else {
-      const receiving = paths.find((p) => p.toLowerCase().includes("receiving")) ?? paths[0];
-      setLocation((current) => current || receiving || "");
-      if (prefill?.category) {
-        setCategory(prefill.category);
-        setIdentityModel(prefill.category === "Jewelry" ? "QUANTITY" : "UNIQUE");
-      }
-      if (prefill?.cost !== undefined) setCost((current) => current || String(prefill.cost));
-      if (prefill?.priceBasis) setConsignmentPriceBasis((current) => current || prefill.priceBasis!);
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editItem, prefill]);
 
-  const availableKarats = metalKarats.filter((k) => k.scopeValue === jewelry.metalType).map((k) => k.label);
+  // Suggest the next stock number until the user types their own.
+  useEffect(() => {
+    if (!open || isEditing || codeTouched || !categoryKey) return;
+    let cancelled = false;
+    suggestStockNumber(categoryKey)
+      .then((code) => !cancelled && setRaw((current) => ({ ...current, code })))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isEditing, codeTouched, categoryKey, existingItems]);
 
-  const reset = () => {
-    setStep(0);
-    setCategory("Diamond");
-    setIdentityModel("UNIQUE");
-    setCode("");
-    setTitle("");
-    setDescription("");
-    setLocation("");
-    setCost("");
-    setAskingPrice("");
-    setConsignmentValue("");
-    setConsignmentPriceBasis("");
-    setDiamond({ shape: "Round", color: "", clarity: "", lab: "GIA", certificateNumber: "", isLabGrown: false });
-    setJewelry({ styleNumber: "", metalType: "Gold", grossWeightGrams: 0 });
+  /* ------------------------------------------------------------ validation */
+
+  const validation = useMemo(() => validateForm(fields, raw, optionsFor, dateOrder, original), [fields, raw, dateOrder, original, lookups, category]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { errors, warnings } = useMemo(() => {
+    const merged = { ...validation.errors };
+    const flagged = { ...validation.warnings };
+    const conflicts = findUniqueConflicts(visibleFields(fields, raw), validation.values, existingItems, editItem?.id);
+    for (const conflict of conflicts) {
+      // A clash this item already had (a legacy placeholder serial) is shown, but doesn't block an unrelated edit.
+      if (original && sameRaw(original[conflict.fieldKey], raw[conflict.fieldKey])) flagged[conflict.fieldKey] ??= conflict.message;
+      else merged[conflict.fieldKey] ??= conflict.message;
+    }
+    return { errors: merged, warnings: flagged };
+  }, [validation, fields, raw, existingItems, editItem, original]);
+
+  const consignmentError = isConsignment && parseNumber(consignmentValue) === null ? "Consignment value is required" : undefined;
+
+  const shownError = (field: FieldDefinition) => (touched.has(field.key) || submitAttempted ? errors[field.key] : undefined);
+
+  /** Every blocking error on the form, in the order the fields are laid out — the first one is where a failed save scrolls to. */
+  const blockingFields = useMemo(
+    () => SECTION_ORDER.flatMap((section) => visibleFields(fieldsForSection(fields, section), raw)).filter((f) => errors[f.key]),
+    [fields, raw, errors]
+  );
+  const errorCount = blockingFields.length + (consignmentError ? 1 : 0);
+
+  const suggestions = useMemo(
+    () => fieldSuggestions(categoryKey, validation.values, components, (n) => formatCurrency(n)),
+    [categoryKey, validation.values, components]
+  );
+
+  /* ------------------------------------------------------------ actions */
+
+  const setValue = (key: string, value: unknown) => {
+    if (key === "code") setCodeTouched(true);
+    setRaw((current) => {
+      const next = { ...current, [key]: value };
+      // A child list scoped by this field (karat by metal) is invalid once the parent changes.
+      for (const f of fields) if (f.source?.kind === "masterList" && f.source.scopedByField === key && current[key] !== value) delete next[f.key];
+      return next;
+    });
+  };
+  const markTouched = (key: string) => setTouched((current) => (current.has(key) ? current : new Set(current).add(key)));
+
+  const chooseCategory = (key: string) => {
+    if (key === categoryKey) return;
+    const target = categories.find((c) => c.key === key);
+    const nextFields = new Set(fieldsForCategory(catalog, key).map((f) => f.key));
+    // Keep what still applies (name, location, prices); drop the previous category's specification.
+    const kept = Object.fromEntries(Object.entries(raw).filter(([k]) => nextFields.has(k) && k !== "identityModel" && (k !== "code" || codeTouched)));
+    setCategoryKey(key);
+    setRaw({ ...kept, identityModel: target?.defaultIdentityModel });
     setComponents([]);
-    setWatch({ brand: "", referenceNumber: "", serialNumber: "", hasBox: false, hasPapers: false, conditionGrade: "Excellent" });
-    setCustomFieldValues({});
+    setTouched(new Set());
+    // A different category asks different questions; holding the user to a failed save of the old one would be noise.
+    setSubmitAttempted(false);
   };
 
-  const chooseCategory = (value: InventoryCategory) => {
-    setCategory(value);
-    setIdentityModel(value === "Jewelry" ? "QUANTITY" : "UNIQUE");
+  const addOption = (field: FieldDefinition) => (label: string) => {
+    if (field.source?.kind !== "masterList") return;
+    const scopeValue = field.source.scopedByField ? String(validation.values[field.source.scopedByField] ?? "") : undefined;
+    addListEntry(field.source.key as MasterListKey, label, scopeValue || undefined);
+    setListVersion((v) => v + 1);
+    showSuccess("Added to master data", `"${label}" is now in the list.`);
   };
 
-  const addComponent = () => setComponents((rows) => [...rows, emptyComponent()]);
-  const removeComponent = (id: string) => setComponents((rows) => rows.filter((row) => row.id !== id));
-  const updateComponent = (id: string, patch: Partial<JewelryComponent>) => setComponents((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  /**
+   * Brings the first problem into view and focuses it. The wizard used to do this implicitly by
+   * jumping to the offending step; on one page the error can be several screens down, so it has to
+   * be explicit or a failed save looks like nothing happened.
+   */
+  const revealFirstError = () => {
+    const target = blockingFields[0]?.key ?? (consignmentError ? "consignment-value" : undefined);
+    if (!target) return;
+    // Open any "More details" section holding the field, or scrolling lands on a collapsed block.
+    const field = blockingFields[0];
+    if (field?.tier === "detail") setExpanded((current) => new Set(current).add(field.section));
+    requestAnimationFrame(() => {
+      const node = bodyRef.current?.querySelector<HTMLElement>(`[data-field="${CSS.escape(target)}"], #${CSS.escape(target)}`);
+      node?.scrollIntoView({ behavior: "smooth", block: "center" });
+      node?.querySelector<HTMLElement>("input, select, textarea, button")?.focus({ preventScroll: true });
+    });
+  };
 
-  const step1Valid = code.trim().length > 0 && title.trim().length > 0;
-  const step3Valid = (isConsignment ? consignmentValue !== "" : cost !== "") && askingPrice !== "";
-  const effectiveCost = isConsignment ? consignmentValue : cost;
-  const margin = effectiveCost && askingPrice ? Math.round(((Number(askingPrice) - Number(effectiveCost)) / Number(askingPrice)) * 100) : null;
+  const copyFromLast = () => {
+    const last = lastSaved.get(categoryKey);
+    if (!last) return;
+    setRaw((current) => ({ ...copyableValues(fields, last.raw), code: current.code, title: "" }));
+    setComponents(last.components.map((c) => ({ ...c, id: crypto.randomUUID(), sourceItemId: undefined })));
+    showSuccess("Copied", "Specification copied from the last item — give this one its own name.");
+  };
 
-  const goNext = () => {
-    if (step === 0 && !step1Valid) {
-      showError("Missing fields", "Stock number and item name are required.");
+  const handleSubmit = async (addAnother: boolean) => {
+    setSubmitAttempted(true);
+    if (errorCount > 0) {
+      showError("Check the form", `${errorCount} field${errorCount === 1 ? " needs" : "s need"} attention.`);
+      revealFirstError();
       return;
     }
-    setStep((s) => (s < 2 ? ((s + 1) as Step) : s));
-  };
 
-  const handleSubmit = async () => {
-    if (!step3Valid) {
-      showError("Missing fields", "Cost and asking price are required.");
-      return;
-    }
     setSaving(true);
     try {
-      const attributePayload = {
-        diamond: category === "Diamond" ? (diamond as DiamondAttributes) : undefined,
-        jewelry: category === "Jewelry" ? ({ ...jewelry, components } as JewelryAttributes) : undefined,
-        watch: category === "Watch" ? (watch as WatchAttributes) : undefined,
-      };
+      const values = validation.values;
+      let draft = applyValues<Partial<InventoryItem>>(editItem ?? {}, fields, raw, values);
+      if (categoryKey === "Jewelry") draft = { ...draft, jewelry: { ...draft.jewelry!, components } };
+      draft = withTypedDefaults(categoryKey, draft);
 
-      let savedItem: InventoryItem | undefined;
+      const label = category?.label ?? categoryKey;
+      const description = draft.description?.trim() || `${label} · received today`;
+      let saved: InventoryItem | undefined;
+
       if (isEditing && editItem) {
-        savedItem = await updateItemDetails(editItem.id, {
-          title: title.trim(),
-          description: description.trim() || `${category} · received today`,
-          location,
-          cost: Number(cost),
-          askingPrice: Number(askingPrice),
-          customFields: customFieldValues,
-          ...attributePayload,
+        saved = await updateItemDetails(editItem.id, {
+          title: draft.title ?? editItem.title,
+          description,
+          location: draft.location ?? editItem.location,
+          quantity: draft.quantity,
+          cost: draft.cost ?? 0,
+          askingPrice: draft.askingPrice ?? 0,
+          diamond: draft.diamond,
+          jewelry: draft.jewelry,
+          watch: draft.watch,
+          customFields: draft.customFields,
+          attributes: draft.attributes,
         });
         showSuccess("Saved", `${editItem.code} updated.`);
       } else {
-        savedItem = await receiveItem({
-          category,
-          identityModel,
-          code: code.trim().toUpperCase(),
-          title: title.trim(),
-          description: description.trim() || `${category} · received today`,
-          location,
-          cost: isConsignment ? 0 : Number(cost),
-          askingPrice: Number(askingPrice),
+        saved = await receiveItem({
+          category: categoryKey,
+          identityModel: draft.identityModel ?? category?.defaultIdentityModel ?? "UNIQUE",
+          quantity: draft.quantity,
+          code: draft.code ?? "",
+          title: draft.title ?? "",
+          description,
+          location: draft.location ?? "",
+          cost: isConsignment ? 0 : (draft.cost ?? 0),
+          askingPrice: draft.askingPrice ?? 0,
           vendorId: prefill?.vendorId,
           purchaseOrderId: prefill?.purchaseOrderId,
           ownership: isConsignment ? "CONSIGNED_IN" : "OWNED",
           memoInId: prefill?.memoInId,
-          consignmentValue: isConsignment ? Number(consignmentValue) : undefined,
+          consignmentValue: isConsignment ? (parseNumber(consignmentValue) ?? 0) : undefined,
           consignmentPriceBasis: isConsignment ? consignmentPriceBasis.trim() : undefined,
-          customFields: customFieldValues,
-          ...attributePayload,
+          diamond: draft.diamond,
+          jewelry: draft.jewelry,
+          watch: draft.watch,
+          customFields: draft.customFields,
+          attributes: draft.attributes,
         });
-        showSuccess(isConsignment ? "Received on consignment" : "Received", `${code.trim().toUpperCase()} added to inventory.`);
+        lastSaved.set(categoryKey, { raw, components });
       }
-      reset();
-      onOpenChange(false);
-      onSaved(savedItem);
+
+      onSaved(saved);
+      if (addAnother && saved) {
+        showSuccess("Received", `${saved.code} added — ready for the next ${label.toLowerCase()} piece.`);
+        const carry = Object.fromEntries(CARRY_FORWARD_KEYS.filter((k) => raw[k] !== undefined).map((k) => [k, raw[k]]));
+        setRaw(freshValues(category, carry));
+        setComponents([]);
+        setTouched(new Set());
+        setSubmitAttempted(false);
+        setCodeTouched(false);
+        bodyRef.current?.scrollTo({ top: 0 });
+        setExistingItems(await listInventory()); // refreshes uniqueness checks and the next stock number
+      } else {
+        if (!isEditing) showSuccess(isConsignment ? "Received on consignment" : "Received", `${saved?.code} added to inventory.`);
+        onOpenChange(false);
+      }
     } catch (error: any) {
-      showError("Error", error?.message || "Could not save this item.");
+      showError("Could not save", error?.message || "Could not save this item.");
     } finally {
       setSaving(false);
     }
   };
 
-  const CategoryIcon = CATEGORY_META[category].icon;
+  /* ------------------------------------------------------------ rendering */
+
+  const renderField = (field: FieldDefinition) => {
+    const derived = suggestions.find((s) => s.fieldKey === field.key);
+    return (
+      <CatalogFieldInput
+        key={field.key}
+        field={field}
+        value={raw[field.key]}
+        onChange={(value) => setValue(field.key, value)}
+        onBlur={() => markTouched(field.key)}
+        options={field.type === "select" || field.type === "multiselect" ? optionsFor(field, validation.values) : undefined}
+        error={shownError(field)}
+        warning={warnings[field.key]}
+        fixSuggestion={validation.suggestions[field.key]}
+        derived={derived && { label: field.unit === "ct" ? `${derived.value} ct` : formatCurrency(derived.value), basis: derived.basis, value: derived.value }}
+        disabled={isEditing && (field.key === "code" || field.key === "identityModel")}
+        onAddOption={canAddMasterData ? addOption(field) : undefined}
+        className={cn((WIDE_FIELDS.has(field.key) || field.type === "multiselect") && "col-span-2", field.key === "description" && "col-span-3")}
+      />
+    );
+  };
+
+  const renderSections = (stepIndex: number) => {
+    const stepFields = visibleFields(fieldsForStep(fields, stepIndex), raw);
+    const sections = STEP_SECTIONS[stepIndex].filter((s) => stepFields.some((f) => f.section === s));
+    return sections.map((section) => {
+      const inSection = stepFields.filter((f) => f.section === section);
+      const essential = inSection.filter((f) => f.tier !== "detail");
+      const detail = inSection.filter((f) => f.tier === "detail");
+      // Details open themselves when they hold a value or an error — nothing entered is ever hidden.
+      const open = expanded.has(section) || detail.some((f) => !isBlank(raw[f.key]) || shownError(f));
+      const toggle = () => setExpanded((current) => { const next = new Set(current); if (next.has(section)) next.delete(section); else next.add(section); return next; });
+      return (
+        <div key={section} className="space-y-3">
+          {stepIndex === 1 && SECTION_TITLES[section] && <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{SECTION_TITLES[section]}</p>}
+          {essential.length > 0 && <div className="grid grid-cols-3 gap-4">{essential.map(renderField)}</div>}
+          {detail.length > 0 && (
+            <>
+              <button type="button" onClick={toggle} aria-expanded={open} className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+                {open ? "Fewer details" : `More ${(SECTION_TITLES[section] ?? "").toLowerCase() || "pricing"} details (${detail.length})`}
+              </button>
+              {open && <div className="grid grid-cols-3 gap-4 rounded-md bg-muted/30 p-3">{detail.map(renderField)}</div>}
+            </>
+          )}
+        </div>
+      );
+    });
+  };
+
+  const activeLabels = (key: string) => lookups.getList(key).filter((e) => e.active).map((e) => e.label);
+  const bomLists: BomLists = {
+    gemstoneTypes: activeLabels("gemstoneTypes"),
+    shapes: activeLabels("diamondShapes"),
+    colors: activeLabels("diamondColors"),
+    clarities: activeLabels("diamondClarities"),
+    fancyIntensities: activeLabels("fancyColorIntensities"),
+    treatments: activeLabels("diamondTreatments"),
+    labs: activeLabels("certificationLabs"),
+  };
+
+  const CategoryIcon = categoryIcon(category?.icon);
+  const cost = isConsignment ? parseNumber(consignmentValue) : (validation.values.cost as number | undefined);
+  const asking = validation.values.askingPrice as number | undefined;
+  const margin = typeof cost === "number" && asking ? Math.round(((asking - cost) / asking) * 100) : null;
+  const specSummary = visibleFields(fieldsForStep(fields, 1), raw)
+    .filter((f) => f.required && validation.values[f.key] !== undefined && f.type !== "boolean")
+    .slice(0, 4);
+  const canCopyLast = !isEditing && lastSaved.has(categoryKey);
 
   return (
-    <Sheet
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) reset();
-        onOpenChange(next);
-      }}
-    >
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent size="formLg" className="p-0 gap-0 h-full flex flex-col overflow-hidden">
         {/* Header + stepper */}
         <div className="px-6 pt-5 pb-4 border-b shrink-0">
@@ -291,18 +437,24 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
             {STEPS.map((label, index) => {
               const isDone = index < step;
               const isCurrent = index === step;
+              const flagged = attempted.has(index) && stepErrorCount(index) > 0;
               return (
                 <div key={label} className="flex items-center gap-2 flex-1">
-                  <div
+                  <button
+                    type="button"
+                    onClick={() => index < step && setStep(index)}
+                    disabled={index >= step}
+                    aria-label={`Step ${index + 1}: ${label}`}
                     className={cn(
                       "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium",
-                      isDone && "bg-primary text-primary-foreground",
-                      isCurrent && "border-2 border-primary text-primary",
-                      !isDone && !isCurrent && "border text-muted-foreground"
+                      isDone && !flagged && "bg-primary text-primary-foreground",
+                      isCurrent && !flagged && "border-2 border-primary text-primary",
+                      flagged && "border-2 border-destructive text-destructive",
+                      !isDone && !isCurrent && !flagged && "border text-muted-foreground"
                     )}
                   >
-                    {isDone ? <Check className="h-3.5 w-3.5" /> : index + 1}
-                  </div>
+                    {isDone && !flagged ? <Check className="h-3.5 w-3.5" /> : index + 1}
+                  </button>
                   <span className={cn("text-xs whitespace-nowrap", isCurrent ? "font-medium text-foreground" : "text-muted-foreground")}>{label}</span>
                   {index < STEPS.length - 1 && <div className={cn("h-px flex-1", isDone ? "bg-primary" : "bg-border")} />}
                 </div>
@@ -311,427 +463,83 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
           </div>
         </div>
 
-        {/* Body: main step content + live summary rail */}
+        {/* Body: step content + live summary rail */}
         <div className="flex-1 flex min-h-0">
-          <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
             {step === 0 && (
-              <div className="space-y-5">
+              <>
                 <div>
-                  <Label className="text-xs text-muted-foreground mb-2 block">Category</Label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(Object.keys(CATEGORY_META) as InventoryCategory[]).map((option) => {
-                      const Icon = CATEGORY_META[option].icon;
-                      const selected = category === option;
+                  <div className="flex items-center justify-between mb-2">
+                    <Label className="text-xs text-muted-foreground">Category</Label>
+                    {canCopyLast && (
+                      <Button type="button" variant="ghost" size="sm" onClick={copyFromLast} className="h-7 text-xs">
+                        <Copy className="h-3 w-3 mr-1" /> Copy from last item
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
+                    {(isEditing && category ? [category] : categories).map((option) => {
+                      const Icon = categoryIcon(option.icon);
+                      const selected = categoryKey === option.key;
                       return (
                         <button
-                          key={option}
+                          key={option.key}
                           type="button"
                           disabled={isEditing}
-                          onClick={() => chooseCategory(option)}
+                          aria-pressed={selected}
+                          onClick={() => chooseCategory(option.key)}
                           className={cn(
                             "flex flex-col items-center gap-1.5 rounded-lg border py-3 transition-colors",
-                            selected ? "border-primary bg-primary/5 text-primary" : "hover:bg-muted/50 text-muted-foreground",
-                            isEditing && !selected && "opacity-40 cursor-not-allowed"
+                            selected ? "border-primary bg-primary/5 text-primary" : "hover:bg-muted/50 text-muted-foreground"
                           )}
                         >
                           <Icon className="h-5 w-5" />
-                          <span className="text-xs font-medium">{option}</span>
+                          <span className="text-xs font-medium">{option.label}</span>
                         </button>
                       );
                     })}
                   </div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Stock number" required>
-                    <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder={CATEGORY_META[category].placeholder} disabled={isEditing} />
-                  </Field>
-                  <Field label="Identity model">
-                    <Select value={identityModel} onValueChange={(v) => setIdentityModel(v as IdentityModel)} disabled={category === "Watch" || isEditing}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UNIQUE">Unique</SelectItem>
-                        <SelectItem value="LOT">Lot / parcel</SelectItem>
-                        <SelectItem value="QUANTITY">Quantity</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </div>
-
-                <Field label="Item name" required>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short display name" />
-                </Field>
-
-                <Field label="Description">
-                  <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Customer-facing description" />
-                </Field>
-
-                <MasterSelect label="Location" value={location} onChange={setLocation} options={locationOptions} placeholder="Select a location" />
-              </div>
+                {renderSections(0)}
+              </>
             )}
 
-            {step === 1 && category === "Diamond" && (
-              <div className="grid grid-cols-3 gap-4">
-                <MasterSelect label="Shape" value={diamond.shape ?? ""} onChange={(v) => setDiamond((d) => ({ ...d, shape: v }))} options={diamondShapes} />
-                <Field label="Carat">
-                  <Input type="number" step="0.01" value={diamond.caratWeight ?? ""} onChange={(e) => setDiamond((d) => ({ ...d, caratWeight: Number(e.target.value) }))} />
-                </Field>
-                <Field label="Origin">
-                  <Select value={diamond.isLabGrown ? "lab" : "natural"} onValueChange={(v) => setDiamond((d) => ({ ...d, isLabGrown: v === "lab" }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="natural">Natural</SelectItem>
-                      <SelectItem value="lab">Laboratory-grown</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Color">
-                  <Input value={diamond.color ?? ""} onChange={(e) => setDiamond((d) => ({ ...d, color: e.target.value }))} placeholder="D–Z" />
-                </Field>
-                <Field label="Clarity">
-                  <Input value={diamond.clarity ?? ""} onChange={(e) => setDiamond((d) => ({ ...d, clarity: e.target.value }))} placeholder="FL–I3" />
-                </Field>
-                <Field label="Cut">
-                  <Input value={diamond.cut ?? ""} onChange={(e) => setDiamond((d) => ({ ...d, cut: e.target.value }))} placeholder="Excellent" />
-                </Field>
-                <MasterSelect label="Lab" value={diamond.lab ?? ""} onChange={(v) => setDiamond((d) => ({ ...d, lab: v }))} options={labs} />
-                <Field label="Certificate #">
-                  <Input value={diamond.certificateNumber ?? ""} onChange={(e) => setDiamond((d) => ({ ...d, certificateNumber: e.target.value }))} />
-                </Field>
-                <MasterSelect label="Treatment" value={diamond.treatment ?? ""} onChange={(v) => setDiamond((d) => ({ ...d, treatment: v }))} options={treatments} />
-              </div>
-            )}
-
-            {step === 1 && category === "Jewelry" && (
-              <div className="space-y-5">
-                <div className="grid grid-cols-3 gap-4">
-                  <Field label="Style #">
-                    <Input value={jewelry.styleNumber ?? ""} onChange={(e) => setJewelry((j) => ({ ...j, styleNumber: e.target.value }))} />
-                  </Field>
-                  <MasterSelect label="Group" value={jewelry.group ?? ""} onChange={(v) => setJewelry((j) => ({ ...j, group: v }))} options={jewelryGroups} />
-                  <MasterSelect label="Sub-category" value={jewelry.subCategory ?? ""} onChange={(v) => setJewelry((j) => ({ ...j, subCategory: v }))} options={jewelrySubCategories} />
-                  <MasterSelect
-                    label="Metal"
-                    value={jewelry.metalType ?? ""}
-                    onChange={(v) => setJewelry((j) => ({ ...j, metalType: v, metalKarat: "" }))}
-                    options={metalTypes}
-                  />
-                  <MasterSelect label="Color" value={jewelry.metalColor ?? ""} onChange={(v) => setJewelry((j) => ({ ...j, metalColor: v }))} options={metalColors} />
-                  <MasterSelect label="Karat" value={jewelry.metalKarat ?? ""} onChange={(v) => setJewelry((j) => ({ ...j, metalKarat: v }))} options={availableKarats} placeholder={jewelry.metalType ? "Select…" : "Pick a metal first"} />
-                  <Field label="Gross weight (g)">
-                    <Input type="number" step="0.1" value={jewelry.grossWeightGrams ?? ""} onChange={(e) => setJewelry((j) => ({ ...j, grossWeightGrams: Number(e.target.value) }))} />
-                  </Field>
-                  <MasterSelect label="Setting type" value={jewelry.settingType ?? ""} onChange={(v) => setJewelry((j) => ({ ...j, settingType: v }))} options={settingTypes} />
-                  <Field label="Hallmark">
-                    <Input value={jewelry.hallmark ?? ""} onChange={(e) => setJewelry((j) => ({ ...j, hallmark: e.target.value }))} placeholder="18K750" />
-                  </Field>
-                  <Field label="Vendor stock #">
-                    <Input value={jewelry.vendorStockNumber ?? ""} onChange={(e) => setJewelry((j) => ({ ...j, vendorStockNumber: e.target.value }))} placeholder="Vendor's own reference" />
-                  </Field>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-xs text-muted-foreground">Bill of materials</Label>
-                    <Button type="button" variant="outline" size="sm" onClick={addComponent} className="h-7 text-xs">
-                      <Plus className="h-3 w-3 mr-1" /> Add component
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    {components.map((c) => (
-                      <div key={c.id} className="rounded-md border p-1.5 space-y-1.5">
-                        <div className="grid grid-cols-[1fr_1fr_1fr_1fr_64px_64px_70px_28px] gap-1.5 items-center">
-                          <Select value={c.type} onValueChange={(v) => updateComponent(c.id, { type: v })}>
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="Type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {gemstoneTypes.map((t) => (
-                                <SelectItem key={t} value={t}>
-                                  {t}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Select value={c.shape ?? ""} onValueChange={(v) => updateComponent(c.id, { shape: v })}>
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="Shape" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {diamondShapes.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {s}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Input value={c.color ?? ""} onChange={(e) => updateComponent(c.id, { color: e.target.value })} placeholder="Color" className="h-8 text-xs" />
-                          <Input value={c.clarity ?? ""} onChange={(e) => updateComponent(c.id, { clarity: e.target.value })} placeholder="Clarity" className="h-8 text-xs" />
-                          <Input type="number" value={c.quantity} onChange={(e) => updateComponent(c.id, { quantity: Number(e.target.value) })} placeholder="Qty" className="h-8 text-xs" />
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={c.weightCarats ?? ""}
-                            onChange={(e) => updateComponent(c.id, { weightCarats: Number(e.target.value) })}
-                            placeholder="Ct"
-                            className="h-8 text-xs"
-                          />
-                          <label className="flex items-center gap-1 text-xs justify-center">
-                            <Switch checked={c.isCenter} onCheckedChange={(checked) => updateComponent(c.id, { isCenter: checked })} /> Ctr
-                          </label>
-                          <Button type="button" variant="ghost" size="icon" onClick={() => removeComponent(c.id)} className="h-8 w-8">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                        <div className="grid grid-cols-6 gap-1.5 items-center pl-0.5">
-                          <Select value={c.fancyColor?.intensity ?? ""} onValueChange={(v) => updateComponent(c.id, { fancyColor: { ...c.fancyColor, intensity: v } })}>
-                            <SelectTrigger className="h-7 text-[11px]">
-                              <SelectValue placeholder="Fancy intensity" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {fancyColorIntensities.map((f) => (
-                                <SelectItem key={f} value={f}>
-                                  {f}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Select value={c.treatment ?? ""} onValueChange={(v) => updateComponent(c.id, { treatment: v })}>
-                            <SelectTrigger className="h-7 text-[11px]">
-                              <SelectValue placeholder="Treatment" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {treatments.map((t) => (
-                                <SelectItem key={t} value={t}>
-                                  {t}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Input value={c.size ?? ""} onChange={(e) => updateComponent(c.id, { size: e.target.value })} placeholder="Size" className="h-7 text-[11px]" />
-                          <Input value={c.stoneNumber ?? ""} onChange={(e) => updateComponent(c.id, { stoneNumber: e.target.value })} placeholder="Stone #" className="h-7 text-[11px]" />
-                          <Select value={c.lab ?? ""} onValueChange={(v) => updateComponent(c.id, { lab: v })}>
-                            <SelectTrigger className="h-7 text-[11px]">
-                              <SelectValue placeholder="Lab" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {labs.map((l) => (
-                                <SelectItem key={l} value={l}>
-                                  {l}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Input value={c.certificateNumber ?? ""} onChange={(e) => updateComponent(c.id, { certificateNumber: e.target.value })} placeholder="Cert #" className="h-7 text-[11px]" />
-                        </div>
-                      </div>
-                    ))}
-                    {components.length === 0 && <p className="text-xs text-muted-foreground">No mounted stones — plain metal piece.</p>}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {step === 1 && category === "Watch" && (
-              <div className="space-y-5">
-                <div className="grid grid-cols-3 gap-4">
-                  <MasterSelect label="Brand" value={watch.brand ?? ""} onChange={(v) => setWatch((w) => ({ ...w, brand: v }))} options={watchBrands} />
-                  <Field label="Model">
-                    <Input value={watch.model ?? ""} onChange={(e) => setWatch((w) => ({ ...w, model: e.target.value }))} />
-                  </Field>
-                  <Field label="Reference #">
-                    <Input value={watch.referenceNumber ?? ""} onChange={(e) => setWatch((w) => ({ ...w, referenceNumber: e.target.value }))} />
-                  </Field>
-                  <Field label="Serial #">
-                    <Input value={watch.serialNumber ?? ""} onChange={(e) => setWatch((w) => ({ ...w, serialNumber: e.target.value }))} />
-                  </Field>
-                  <MasterSelect label="Case material" value={watch.caseMaterial ?? ""} onChange={(v) => setWatch((w) => ({ ...w, caseMaterial: v }))} options={watchCaseMaterials} />
-                  <MasterSelect label="Movement" value={watch.movement ?? ""} onChange={(v) => setWatch((w) => ({ ...w, movement: v }))} options={watchMovements} />
-                  <Field label="Condition">
-                    <Select value={watch.conditionGrade} onValueChange={(v) => setWatch((w) => ({ ...w, conditionGrade: v as WatchAttributes["conditionGrade"] }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Unworn">Unworn</SelectItem>
-                        <SelectItem value="Excellent">Excellent</SelectItem>
-                        <SelectItem value="Very good">Very good</SelectItem>
-                        <SelectItem value="Good">Good</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Box / Papers" className="col-span-2">
-                    <div className="flex items-center gap-4 h-10">
-                      <label className="flex items-center gap-1.5 text-sm">
-                        <Switch checked={watch.hasBox} onCheckedChange={(checked) => setWatch((w) => ({ ...w, hasBox: checked }))} /> Box
-                      </label>
-                      <label className="flex items-center gap-1.5 text-sm">
-                        <Switch checked={watch.hasPapers} onCheckedChange={(checked) => setWatch((w) => ({ ...w, hasPapers: checked }))} /> Papers
-                      </label>
-                    </div>
-                  </Field>
-                </div>
-
-                <div>
-                  <Label className="text-xs text-muted-foreground mb-2 block">Features</Label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {watchFeatureOptions.map((feature) => {
-                      const active = watch.features?.includes(feature) ?? false;
-                      return (
-                        <button
-                          key={feature}
-                          type="button"
-                          onClick={() =>
-                            setWatch((w) => ({
-                              ...w,
-                              features: active ? (w.features ?? []).filter((f) => f !== feature) : [...(w.features ?? []), feature],
-                            }))
-                          }
-                          className={cn(
-                            "px-2.5 py-1 rounded-full text-xs border transition-colors",
-                            active ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground hover:bg-muted"
-                          )}
-                        >
-                          {feature}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {step === 1 && applicableCustomFields.length > 0 && (
-              <div className="mt-5">
-                <Label className="text-xs text-muted-foreground mb-2 block">Custom fields</Label>
-                <div className="grid grid-cols-3 gap-4">
-                  {applicableCustomFields.map((d) => (
-                    <Field key={d.id} label={d.label} required={d.required}>
-                      {d.type === "text" && (
-                        <Input value={String(customFieldValues[d.id] ?? "")} onChange={(e) => setCustomFieldValues((v) => ({ ...v, [d.id]: e.target.value }))} />
-                      )}
-                      {d.type === "number" && (
-                        <Input
-                          type="number"
-                          value={customFieldValues[d.id] !== undefined ? String(customFieldValues[d.id]) : ""}
-                          onChange={(e) => setCustomFieldValues((v) => ({ ...v, [d.id]: Number(e.target.value) }))}
-                        />
-                      )}
-                      {d.type === "date" && (
-                        <Input
-                          type="date"
-                          value={String(customFieldValues[d.id] ?? "")}
-                          onChange={(e) => setCustomFieldValues((v) => ({ ...v, [d.id]: e.target.value }))}
-                        />
-                      )}
-                      {d.type === "boolean" && (
-                        <div className="h-10 flex items-center">
-                          <Switch
-                            checked={Boolean(customFieldValues[d.id])}
-                            onCheckedChange={(checked) => setCustomFieldValues((v) => ({ ...v, [d.id]: checked }))}
-                          />
-                        </div>
-                      )}
-                      {d.type === "dropdown" && (
-                        <Select value={String(customFieldValues[d.id] ?? "")} onValueChange={(val) => setCustomFieldValues((v) => ({ ...v, [d.id]: val }))}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(d.options ?? []).map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </Field>
-                  ))}
-                </div>
-              </div>
+            {step === 1 && (
+              <>
+                {renderSections(1)}
+                {categoryKey === "Jewelry" && <BomEditor components={components} onChange={setComponents} lists={bomLists} />}
+                {visibleFields(fieldsForStep(fields, 1), raw).length === 0 && categoryKey !== "Jewelry" && (
+                  <p className="text-sm text-muted-foreground">{category?.label} has no specification fields yet — add them in Settings → Inventory Catalog.</p>
+                )}
+              </>
             )}
 
             {step === 2 && (
-              <div className="space-y-5">
-                {isConsignment ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Consignment value" required>
-                      <Input type="number" step="0.01" value={consignmentValue} onChange={(e) => setConsignmentValue(e.target.value)} />
-                    </Field>
-                    <Field label="Asking price" required>
-                      <Input type="number" step="0.01" value={askingPrice} onChange={(e) => setAskingPrice(e.target.value)} />
-                    </Field>
-                    <Field label="Price basis" className="col-span-2">
-                      <Input value={consignmentPriceBasis} onChange={(e) => setConsignmentPriceBasis(e.target.value)} placeholder="e.g. $5,800 net if sold" />
-                    </Field>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Acquisition cost" required>
-                      <Input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} />
-                    </Field>
-                    <Field label="Asking price" required>
-                      <Input type="number" step="0.01" value={askingPrice} onChange={(e) => setAskingPrice(e.target.value)} />
-                    </Field>
-                  </div>
-                )}
-
-                {category === "Diamond" && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Rap price / ct">
-                      <Input type="number" value={diamond.rapPricePerCarat ?? ""} onChange={(e) => setDiamond((d) => ({ ...d, rapPricePerCarat: Number(e.target.value) }))} />
-                    </Field>
-                    <Field label="Discount off Rap %">
-                      <Input type="number" value={diamond.rapDiscountPct ?? ""} onChange={(e) => setDiamond((d) => ({ ...d, rapDiscountPct: Number(e.target.value) }))} placeholder="-25" />
-                    </Field>
-                  </div>
-                )}
-
-                {category === "Jewelry" && (
+              <>
+                {isConsignment && (
                   <div className="grid grid-cols-3 gap-4">
-                    <Field label="Metal cost">
-                      <Input type="number" value={jewelry.metalCost ?? ""} onChange={(e) => setJewelry((j) => ({ ...j, metalCost: Number(e.target.value) }))} />
-                    </Field>
-                    <Field label="Jewelry expense (making charges)">
-                      <Input type="number" value={jewelry.jewelryExpense ?? ""} onChange={(e) => setJewelry((j) => ({ ...j, jewelryExpense: Number(e.target.value) }))} />
-                    </Field>
-                    <Field label="Mounting sell price">
-                      <Input type="number" value={jewelry.mountingSellPrice ?? ""} onChange={(e) => setJewelry((j) => ({ ...j, mountingSellPrice: Number(e.target.value) }))} />
-                    </Field>
-                    <Field label="Tag price">
-                      <Input type="number" value={jewelry.tagPrice ?? ""} onChange={(e) => setJewelry((j) => ({ ...j, tagPrice: Number(e.target.value) }))} />
-                    </Field>
-                    <Field label="Retail price">
-                      <Input type="number" value={jewelry.retailPrice ?? ""} onChange={(e) => setJewelry((j) => ({ ...j, retailPrice: Number(e.target.value) }))} />
-                    </Field>
-                    <Field label="Markup %">
-                      <Input type="number" value={jewelry.markupPct ?? ""} onChange={(e) => setJewelry((j) => ({ ...j, markupPct: Number(e.target.value) }))} />
-                    </Field>
+                    <div className="space-y-1">
+                      <Label htmlFor="consignment-value" className="text-xs text-muted-foreground">
+                        Consignment value<span className="text-destructive ml-0.5">*</span>
+                      </Label>
+                      <Input
+                        id="consignment-value"
+                        inputMode="decimal"
+                        value={consignmentValue}
+                        onChange={(e) => setConsignmentValue(e.target.value)}
+                        className={cn("tabular-nums", attempted.has(2) && consignmentError && "border-destructive")}
+                      />
+                      {attempted.has(2) && consignmentError && <p className="text-xs text-destructive">{consignmentError}</p>}
+                    </div>
+                    <div className="space-y-1 col-span-2">
+                      <Label htmlFor="consignment-basis" className="text-xs text-muted-foreground">
+                        Price basis
+                      </Label>
+                      <Input id="consignment-basis" value={consignmentPriceBasis} onChange={(e) => setConsignmentPriceBasis(e.target.value)} placeholder="e.g. $5,800 net if sold" />
+                    </div>
                   </div>
                 )}
-
-                {category === "Watch" && (
-                  <div className="grid grid-cols-3 gap-4">
-                    <Field label="Base price">
-                      <Input type="number" value={watch.basePrice ?? ""} onChange={(e) => setWatch((w) => ({ ...w, basePrice: Number(e.target.value) }))} />
-                    </Field>
-                    <Field label="Retail price">
-                      <Input type="number" value={watch.retailPrice ?? ""} onChange={(e) => setWatch((w) => ({ ...w, retailPrice: Number(e.target.value) }))} />
-                    </Field>
-                    <Field label="Our price">
-                      <Input type="number" value={watch.ourPrice ?? ""} onChange={(e) => setWatch((w) => ({ ...w, ourPrice: Number(e.target.value) }))} />
-                    </Field>
-                    <Field label="Markup %">
-                      <Input type="number" value={watch.markupPct ?? ""} onChange={(e) => setWatch((w) => ({ ...w, markupPct: Number(e.target.value) }))} />
-                    </Field>
-                  </div>
-                )}
-
+                {renderSections(2)}
                 <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                   {isEditing ? (
                     "Saving logs a details-updated movement on this item's ledger — status and custody are unaffected."
@@ -745,7 +553,7 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
                     </>
                   )}
                 </div>
-              </div>
+              </>
             )}
           </div>
 
@@ -756,39 +564,51 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
                 <CategoryIcon className="h-4 w-4 text-muted-foreground" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{title || "Untitled item"}</p>
-                <p className="text-xs text-muted-foreground truncate">{code || "No stock #"}</p>
+                <p className="text-sm font-medium truncate">{String(raw.title ?? "") || "Untitled item"}</p>
+                <p className="text-xs text-muted-foreground truncate">{String(raw.code ?? "") || "No stock #"}</p>
               </div>
             </div>
             <div className="space-y-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Category</span>
-                <Badge variant="outline">{category}</Badge>
+                <Badge variant="outline">{category?.label ?? "—"}</Badge>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Identity</span>
-                <span>{identityModel}</span>
+                <span>
+                  {String(raw.identityModel ?? "—")}
+                  {validation.values.quantity !== undefined && ` · ${validation.values.quantity} pcs`}
+                </span>
               </div>
-              {location && (
+              {specSummary.map((f) => (
+                <div key={f.key} className="flex justify-between gap-2">
+                  <span className="text-muted-foreground truncate">{f.label}</span>
+                  <span className="truncate tabular-nums">
+                    {String(validation.values[f.key])}
+                    {f.unit ? (f.unit === "%" ? "%" : ` ${f.unit}`) : ""}
+                  </span>
+                </div>
+              ))}
+              {typeof raw.location === "string" && raw.location && (
                 <div>
                   <span className="text-muted-foreground block">Location</span>
-                  <span className="text-foreground">{location}</span>
+                  <span className="text-foreground">{raw.location}</span>
                 </div>
               )}
             </div>
-            {margin !== null && (
+            {margin !== null && typeof cost === "number" && asking !== undefined && (
               <div className="mt-4 pt-4 border-t space-y-1.5 text-xs">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{isConsignment ? "Consignment value" : "Cost"}</span>
-                  <span>{formatCurrency(Number(effectiveCost))}</span>
+                  <span className="tabular-nums">{formatCurrency(cost)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Asking</span>
-                  <span>{formatCurrency(Number(askingPrice))}</span>
+                  <span className="tabular-nums">{formatCurrency(asking)}</span>
                 </div>
                 <div className="flex justify-between font-medium">
                   <span className="text-muted-foreground">Margin</span>
-                  <span className="text-emerald-600">{margin}%</span>
+                  <span className={cn("tabular-nums", margin < 0 ? "text-destructive" : "text-emerald-600")}>{margin}%</span>
                 </div>
               </div>
             )}
@@ -797,16 +617,25 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t px-6 py-4 shrink-0">
-          <Button variant="ghost" onClick={() => (step === 0 ? onOpenChange(false) : setStep((s) => (s - 1) as Step))}>
+          <Button variant="ghost" onClick={() => (step === 0 ? onOpenChange(false) : setStep((s) => s - 1))}>
             {step === 0 ? "Cancel" : "Back"}
           </Button>
-          {step < 2 ? (
-            <Button onClick={goNext}>Continue</Button>
-          ) : (
-            <Button onClick={handleSubmit} disabled={saving}>
-              {saving ? "Saving…" : isEditing ? "Save changes" : isConsignment ? "Receive on consignment" : "Receive into inventory"}
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {step < STEPS.length - 1 ? (
+              <Button onClick={goNext}>Continue</Button>
+            ) : (
+              <>
+                {!isEditing && !prefill && (
+                  <Button variant="outline" onClick={() => handleSubmit(true)} disabled={saving}>
+                    Save &amp; add another
+                  </Button>
+                )}
+                <Button onClick={() => handleSubmit(false)} disabled={saving}>
+                  {saving ? "Saving…" : isEditing ? "Save changes" : isConsignment ? "Receive on consignment" : "Receive into inventory"}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </SheetContent>
     </Sheet>

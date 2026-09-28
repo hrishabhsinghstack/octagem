@@ -53,7 +53,7 @@ export function CustomerListPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
-          <p className="text-muted-foreground mt-1">Parties you quote, memo, and invoice.</p>
+          <p className="text-muted-foreground mt-1">Parties you memo and invoice.</p>
         </div>
         <Button onClick={openNew}>
           <Plus className="h-4 w-4 mr-2" /> Add customer

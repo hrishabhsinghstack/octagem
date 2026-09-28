@@ -34,14 +34,14 @@ export function MemoInDetailPanel() {
       if (found) {
         const foundVendor = (await getVendor(found.vendorId)) ?? null;
         setVendor(foundVendor);
-        recordRecentActivity({ type: "memoIn", id: found.id, label: found.id, sublabel: foundVendor?.name ?? found.counterparty, path: `/memos/in/${found.id}` });
+        recordRecentActivity({ type: "memoIn", id: found.id, label: found.id, sublabel: foundVendor?.name ?? found.counterparty, path: `/memo-in/${found.id}` });
       }
     });
   };
 
   useEffect(refresh, [id]);
 
-  const close = () => navigate("/memos");
+  const close = () => navigate("/memo-in");
 
   if (!record) {
     return (

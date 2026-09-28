@@ -7,6 +7,10 @@
  */
 export type MasterListKey =
   | "diamondShapes"
+  | "diamondColors"
+  | "diamondClarities"
+  | "finishGrades"
+  | "fluorescenceGrades"
   | "certificationLabs"
   | "diamondTreatments"
   | "fancyColorIntensities"
@@ -65,6 +69,10 @@ export const MASTER_LIST_SECTIONS: { key: MasterListSection; title: string }[] =
 
 export const MASTER_LISTS: MasterListDefinition[] = [
   { key: "diamondShapes", section: "diamond", title: "Diamond Shapes", description: "Used on the diamond intake form." },
+  { key: "diamondColors", section: "diamond", title: "Diamond Colors", description: "GIA color scale, best first. Ranges like G-H are accepted wherever color is entered." },
+  { key: "diamondClarities", section: "diamond", title: "Diamond Clarities", description: "GIA clarity scale, best first, plus the generic parcel grades (VS, SI). Ranges like SI1-SI2 are accepted." },
+  { key: "finishGrades", section: "diamond", title: "Cut / Polish / Symmetry Grades", description: "Shared grading scale for cut, polish and symmetry." },
+  { key: "fluorescenceGrades", section: "diamond", title: "Fluorescence", description: "Fluorescence strength scale." },
   { key: "certificationLabs", section: "diamond", title: "Certification Labs", description: "GIA, IGI and other grading labs." },
   { key: "diamondTreatments", section: "diamond", title: "Diamond Treatments", description: "Disclosed treatment/enhancement types." },
   { key: "fancyColorIntensities", section: "diamond", title: "Fancy Color Intensities", description: "GIA fancy-color scale, used on diamonds and mounted stones." },

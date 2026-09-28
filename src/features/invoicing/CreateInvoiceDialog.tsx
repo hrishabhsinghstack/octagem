@@ -83,7 +83,7 @@ export function CreateInvoiceDialog({ open, onOpenChange, onCreated }: CreateInv
       <SheetContent size="formLg">
         <SheetHeader>
           <SheetTitle>New invoice — direct sale</SheetTitle>
-          <SheetDescription>Bypasses a Sales Order. Items move straight from Available to Sold.</SheetDescription>
+          <SheetDescription>The counter-sale path: items move straight from Available to Sold. The other way in is converting a Memo.</SheetDescription>
         </SheetHeader>
 
         <div className="grid grid-cols-2 gap-3">

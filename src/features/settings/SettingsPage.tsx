@@ -1,6 +1,6 @@
 import { BrandingSettings } from "@/components/settings/BrandingSettings";
 import { BusinessSettings } from "@/components/settings/BusinessSettings";
-import { CustomFieldsSettings } from "@/components/settings/CustomFieldsSettings";
+import { InventoryCatalogSettings } from "@/components/settings/catalog/InventoryCatalogSettings";
 import { MasterDataSettings } from "@/components/settings/MasterDataSettings";
 import { ProfileSettings } from "@/components/settings/ProfileSettings";
 import { RolesSettings } from "@/components/settings/rbac/RolesSettings";
@@ -23,8 +23,8 @@ export function SettingsPage() {
         return <BrandingSettings />;
       case "masterData":
         return <MasterDataSettings />;
-      case "customFields":
-        return <CustomFieldsSettings />;
+      case "catalog":
+        return <InventoryCatalogSettings />;
       case "workflow":
         return <WorkflowSettings />;
       case "users":

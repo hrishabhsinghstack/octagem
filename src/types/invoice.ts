@@ -1,12 +1,11 @@
 /**
- * §17 — revenue-recognizing document. Three sources converge here: a direct quick-sale, a
- * fulfilled Sales Order, or a converted Memo (§13.7 — conversion is the only path from memo to
- * invoice). No KP warranty text yet (needs the Document engine, §26) — this pass is the object
- * model, the AR lifecycle (Open → Partially paid → Paid), and a real tax/currency computation,
- * not document generation.
+ * §17 — revenue-recognizing document, and one of only two sales documents (the other is the Memo).
+ * Two sources converge here: a direct sale, or a converted Memo (§13.7 — conversion is the only path
+ * from memo to invoice). Quotes and Sales Orders were removed; invoices stored with the old
+ * "SalesOrder" source still read back fine, they simply no longer link anywhere.
  */
 export type InvoiceStatus = "Open" | "Partially paid" | "Paid" | "Void";
-export type InvoiceSource = "Direct" | "SalesOrder" | "MemoConversion";
+export type InvoiceSource = "Direct" | "MemoConversion";
 
 export interface InvoiceLine {
   id: string;

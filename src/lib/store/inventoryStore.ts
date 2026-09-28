@@ -23,6 +23,13 @@ function migrate(items: InventoryItem[]): { items: InventoryItem[]; changed: boo
       changed = true;
       next = { ...next, ownership: "OWNED" };
     }
+    // "Reserved" was only ever set by Sales Order allocation, which no longer exists. Anything still
+    // holding it is unallocated stock, so it goes back to Available rather than sitting in a status
+    // nothing can clear.
+    if ((next.status as string) === "Reserved") {
+      changed = true;
+      next = { ...next, status: "Available" };
+    }
     return next;
   });
   return { items: migrated, changed };
@@ -61,8 +68,15 @@ export function getById(id: string): InventoryItem | undefined {
   return readAll().find((item) => item.id === id);
 }
 
+/** Stock number is the item id, so a duplicate would make two items indistinguishable to every lookup. */
+export class DuplicateStockNumberError extends Error {}
+
 export function insert(item: InventoryItem): InventoryItem {
   const items = readAll();
+  const code = item.code.trim().toUpperCase();
+  if (items.some((existing) => existing.id.toUpperCase() === item.id.toUpperCase() || existing.code.trim().toUpperCase() === code)) {
+    throw new DuplicateStockNumberError(`Stock number ${item.code} is already in use.`);
+  }
   items.unshift(item);
   writeAll(items);
   return item;
@@ -79,6 +93,30 @@ export function update(id: string, patch: Partial<InventoryItem>, ledgerEntry?: 
   items[index] = updated;
   writeAll(items);
   return updated;
+}
+
+/**
+ * Applies many changes in one read and one write — an import of 2,000 rows either lands completely
+ * or not at all (a full-storage error leaves everything as it was), and it avoids re-serialising the
+ * whole inventory once per row.
+ */
+export function applyBatch(changes: { inserts?: InventoryItem[]; replaces?: InventoryItem[]; removes?: string[] }) {
+  const items = readAll();
+  const byId = new Map(items.map((item, index) => [item.id.toUpperCase(), index]));
+  const codes = new Set(items.map((item) => item.code.trim().toUpperCase()));
+  for (const item of changes.inserts ?? []) {
+    const code = item.code.trim().toUpperCase();
+    if (codes.has(code) || byId.has(item.id.toUpperCase())) throw new DuplicateStockNumberError(`Stock number ${item.code} is already in use.`);
+    codes.add(code);
+  }
+  for (const item of changes.replaces ?? []) {
+    const index = byId.get(item.id.toUpperCase());
+    if (index === undefined) throw new Error(`${item.code} no longer exists.`);
+    items[index] = item;
+  }
+  const removing = new Set((changes.removes ?? []).map((id) => id.toUpperCase()));
+  const next = [...(changes.inserts ?? []), ...items.filter((item) => !removing.has(item.id.toUpperCase()))];
+  writeAll(next);
 }
 
 export function remove(id: string) {

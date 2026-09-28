@@ -14,6 +14,10 @@ const seedNumericEntries = (rows: [string, number][]): MasterListEntry[] =>
 
 const DEFAULT_LISTS: Record<MasterListKey, () => MasterListEntry[]> = {
   diamondShapes: () => seedEntries(["Round", "Oval", "Cushion", "Emerald", "Pear", "Princess", "Marquise", "Radiant", "Asscher", "Heart"]),
+  diamondColors: () => seedEntries("DEFGHIJKLMNOPQRSTUVWXYZ".split("")),
+  diamondClarities: () => seedEntries(["FL", "IF", "VVS1", "VVS2", "VS1", "VS2", "SI1", "SI2", "I1", "I2", "I3", "VVS", "VS", "SI", "I"]),
+  finishGrades: () => seedEntries(["Excellent", "Very Good", "Good", "Fair", "Poor"]),
+  fluorescenceGrades: () => seedEntries(["None", "Faint", "Medium", "Strong", "Very Strong"]),
   certificationLabs: () => seedEntries(["GIA", "IGI", "HRD", "AGS", "EGL", "GCAL", "None"]),
   diamondTreatments: () => seedEntries(["None", "HPHT", "Laser Drilled", "Fracture Filled", "Irradiated", "Clarity Enhanced", "Mixed / Unassessed"]),
   fancyColorIntensities: () => seedEntries(["Faint", "Very Light", "Light", "Fancy Light", "Fancy", "Fancy Intense", "Fancy Vivid", "Fancy Deep", "Fancy Dark"]),
@@ -59,7 +63,8 @@ function readList(key: MasterListKey): MasterListEntry[] {
   } catch {
     // fall through to reseed
   }
-  const seeded = DEFAULT_LISTS[key]();
+  // Lists without a product seed (tenant-defined, for tenant categories) start empty rather than crash.
+  const seeded = DEFAULT_LISTS[key]?.() ?? [];
   localStorage.setItem(storageKey, JSON.stringify(seeded));
   return seeded;
 }

@@ -8,9 +8,9 @@ import { DocumentActionButtons } from "@/components/documents/DocumentActionButt
 import { PrintableDocument } from "@/components/documents/PrintableDocument";
 import { getItem } from "@/lib/api/inventoryApi";
 import { convertMemo, extendMemo, getMemo, returnMemo } from "@/lib/api/memoApi";
-import { daysFromToday, deriveMemoRisk, memoExposure } from "@/lib/memo";
+import { daysFromToday, deriveMemoRisk, memoExposure, openMemoLines } from "@/lib/memo";
 import { recordRecentActivity } from "@/lib/recentActivity";
-import { formatCurrency, formatDateShort, showSuccess } from "@/lib/utils";
+import { cn, formatCurrency, formatDateShort, showSuccess } from "@/lib/utils";
 import type { InventoryItem } from "@/types/inventory";
 import type { MemoRecord } from "@/types/memo";
 import { ReceiptText, RotateCcw, Undo2 } from "lucide-react";
@@ -24,9 +24,12 @@ export function MemoDetailPanel() {
   const [items, setItems] = useState<Record<string, InventoryItem>>({});
   const [newDueDate, setNewDueDate] = useState(daysFromToday(14));
   const [busy, setBusy] = useState(false);
+  /** Empty means "everything still out" — the common whole-memo case needs no ticking. */
+  const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
 
   const refresh = () => {
     if (!id) return;
+    setSelectedLineIds([]);
     getMemo(id).then(async (found) => {
       setMemo(found ?? null);
       if (found) {
@@ -61,13 +64,26 @@ export function MemoDetailPanel() {
     setBusy(false);
   };
 
+  const openLines = openMemoLines(memo.lines);
+  // No ticks means the whole memo; passing undefined keeps that the explicit contract rather than a list that happens to match.
+  const actionLineIds = selectedLineIds.length > 0 ? selectedLineIds : undefined;
+  const actingOn = actionLineIds ? openLines.filter((l) => actionLineIds.includes(l.id)) : openLines;
+  const isPartial = actingOn.length > 0 && actingOn.length < openLines.length;
+  const selectionSuffix = isPartial ? ` (${actingOn.length} of ${openLines.length})` : "";
+
+  const toggleLine = (lineId: string) =>
+    setSelectedLineIds((current) => (current.includes(lineId) ? current.filter((x) => x !== lineId) : [...current, lineId]));
+
   const handleConvert = async () => {
     setBusy(true);
-    const updated = await convertMemo(memo.id);
+    const updated = await convertMemo(memo.id, actionLineIds);
     setBusy(false);
-    if (updated?.invoiceId) {
-      showSuccess("Converted", `Invoice ${updated.invoiceId} created.`);
-      navigate(`/invoices/${updated.invoiceId}`);
+    if (!updated) return;
+    const invoiceId = updated.lines.find((l) => actingOn.some((a) => a.id === l.id))?.invoiceId ?? updated.invoiceId;
+    refresh();
+    if (invoiceId) {
+      showSuccess("Converted", isPartial ? `Invoice ${invoiceId} created; the rest of the memo stays open.` : `Invoice ${invoiceId} created.`);
+      navigate(`/invoices/${invoiceId}`);
     }
   };
 
@@ -99,11 +115,15 @@ export function MemoDetailPanel() {
               />
               {memo.status === "Open" && (
                 <>
-                  <Button variant="outline" disabled={busy} onClick={() => runAction(() => returnMemo(memo.id), "Items returned to receiving for inspection.")}>
-                    <RotateCcw className="h-4 w-4 mr-2" /> Record return
+                  <Button
+                    variant="outline"
+                    disabled={busy || actingOn.length === 0}
+                    onClick={() => runAction(() => returnMemo(memo.id, actionLineIds), "Items returned to receiving for inspection.")}
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" /> Record return{selectionSuffix}
                   </Button>
-                  <Button disabled={busy} onClick={handleConvert}>
-                    <ReceiptText className="h-4 w-4 mr-2" /> Convert to invoice
+                  <Button disabled={busy || actingOn.length === 0} onClick={handleConvert}>
+                    <ReceiptText className="h-4 w-4 mr-2" /> Convert to invoice{selectionSuffix}
                   </Button>
                 </>
               )}
@@ -111,13 +131,19 @@ export function MemoDetailPanel() {
           </div>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle className="text-base">Lines</CardTitle>
+              {memo.status === "Open" && openLines.length > 1 && (
+                <p className="text-xs text-muted-foreground">
+                  {selectedLineIds.length > 0 ? `${actingOn.length} selected — actions apply to these only` : "Tick lines to convert or return only part of this memo"}
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {memo.status === "Open" && openLines.length > 1 && <TableHead className="w-10" />}
                     <TableHead>Item</TableHead>
                     <TableHead>Price basis</TableHead>
                     <TableHead className="text-right">Total</TableHead>
@@ -126,9 +152,30 @@ export function MemoDetailPanel() {
                 <TableBody>
                   {memo.lines.map((line) => {
                     const item = items[line.itemId];
+                    const selectable = memo.status === "Open" && openLines.length > 1 && !line.settledAs;
                     return (
-                      <TableRow key={line.id}>
-                        <TableCell>{item ? `${item.code} · ${item.title}` : line.itemId}</TableCell>
+                      <TableRow key={line.id} className={cn(line.settledAs && "text-muted-foreground")}>
+                        {memo.status === "Open" && openLines.length > 1 && (
+                          <TableCell>
+                            {selectable && (
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4"
+                                checked={selectedLineIds.includes(line.id)}
+                                onChange={() => toggleLine(line.id)}
+                                aria-label={`Select ${item?.code ?? line.itemId}`}
+                              />
+                            )}
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          <span className={cn(line.settledAs && "line-through")}>{item ? `${item.code} · ${item.title}` : line.itemId}</span>
+                          {line.settledAs && (
+                            <Badge variant="outline" className="ml-2 font-normal">
+                              {line.settledAs === "Invoiced" ? line.invoiceId ?? "Invoiced" : "Returned"}
+                            </Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">{line.priceBasis}</TableCell>
                         <TableCell className="text-right">{formatCurrency(line.lineTotal)}</TableCell>
                       </TableRow>
@@ -209,7 +256,7 @@ export function MemoDetailPanel() {
                     <Undo2 className="h-4 w-4 mr-2" /> Extend
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground pt-2">Creates a real Invoice for the linked items and marks them Sold — conversion is the only path from memo to sale.</p>
+                <p className="text-xs text-muted-foreground pt-2">Pushes the return date out for everything still in the customer's hands, and records the extension on each item's ledger.</p>
               </CardContent>
             </Card>
           )}

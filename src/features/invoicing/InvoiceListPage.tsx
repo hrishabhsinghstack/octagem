@@ -48,7 +48,7 @@ export function InvoiceListPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Invoices</h1>
-          <p className="text-muted-foreground mt-1">Revenue-recognizing documents from direct sale, Sales Order fulfilment, or Memo conversion.</p>
+          <p className="text-muted-foreground mt-1">Revenue-recognizing documents — raised directly, or converted from a Memo.</p>
         </div>
         <Can module="invoices" action="create">
           <Button onClick={() => setCreateOpen(true)}>

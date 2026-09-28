@@ -13,6 +13,14 @@ export interface MemoLine {
   priceBasis: string;
   quantity: number;
   lineTotal: number;
+  /**
+   * Set once this line stops being custody: the customer bought it, or sent it back. Settled lines
+   * stay on the memo rather than being removed — a custody document has to keep showing everything
+   * that went out — but they no longer count towards exposure. Undefined means still out there.
+   */
+  settledAs?: "Invoiced" | "Returned";
+  /** The invoice this line became. Set together with settledAs: "Invoiced". */
+  invoiceId?: string;
 }
 
 export interface MemoRecord {
@@ -36,6 +44,10 @@ export interface MemoRecord {
   issuedAt: string;
   dueDate: string;
   status: MemoStatus;
-  /** Set once Convert creates the linked Invoice. */
+  /**
+   * The invoice that closed this memo out — set only when the last unsettled line converts. A memo
+   * converted in instalments carries the per-line invoiceId for the earlier ones; this is the
+   * "show me the sale" shortcut for the common whole-memo case, not the full record.
+   */
   invoiceId?: string;
 }

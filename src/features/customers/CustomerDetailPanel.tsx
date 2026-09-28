@@ -5,29 +5,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { getCustomer } from "@/lib/api/customerApi";
 import { listInvoices } from "@/lib/api/invoiceApi";
 import { listMemos } from "@/lib/api/memoApi";
-import { listQuotes } from "@/lib/api/quoteApi";
-import { listSalesOrders } from "@/lib/api/salesOrderApi";
 import { getList } from "@/lib/store/masterDataStore";
 import { deriveMemoRisk, memoExposure } from "@/lib/memo";
-import { isQuoteExpired } from "@/lib/quote";
 import { recordRecentActivity } from "@/lib/recentActivity";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import type { Customer } from "@/types/party";
 import type { Invoice, InvoiceStatus } from "@/types/invoice";
 import type { MemoRecord, MemoRisk } from "@/types/memo";
-import type { Quote } from "@/types/quote";
-import type { SalesOrder, SalesOrderStatus } from "@/types/salesOrder";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-
-const SALES_ORDER_STATUS_VARIANT: Record<SalesOrderStatus, "default" | "secondary" | "outline" | "success" | "warning" | "destructive"> = {
-  Draft: "outline",
-  Allocated: "secondary",
-  "Partially fulfilled": "warning",
-  Fulfilled: "success",
-  Invoiced: "success",
-  Cancelled: "destructive",
-};
 
 const INVOICE_STATUS_VARIANT: Record<InvoiceStatus, "default" | "secondary" | "outline" | "success" | "warning" | "destructive"> = {
   Open: "warning",
@@ -46,8 +32,6 @@ export function CustomerDetailPanel() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [memos, setMemos] = useState<MemoRecord[]>([]);
 
@@ -57,8 +41,6 @@ export function CustomerDetailPanel() {
       setCustomer(found ?? null);
       if (found) recordRecentActivity({ type: "customer", id: found.id, label: found.name, sublabel: found.type, path: `/customers/${found.id}` });
     });
-    listQuotes().then((all) => setQuotes(all.filter((q) => q.customerId === id)));
-    listSalesOrders().then((all) => setSalesOrders(all.filter((o) => o.customerId === id)));
     listInvoices().then((all) => setInvoices(all.filter((i) => i.customerId === id)));
     listMemos().then((all) => setMemos(all.filter((m) => m.customerId === id)));
   }, [id]);
@@ -79,8 +61,8 @@ export function CustomerDetailPanel() {
 
   const lifetimeInvoiced = invoices.filter((i) => i.status !== "Void").reduce((sum, i) => sum + i.total, 0);
   const openBalance = invoices.filter((i) => i.status !== "Void").reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
-  const openMemoExposure = memos.filter((m) => m.status === "Open").reduce((sum, m) => sum + memoExposure(m), 0);
-  const activeOrders = salesOrders.filter((o) => o.status !== "Cancelled" && o.status !== "Invoiced").length;
+  const openMemos = memos.filter((m) => m.status === "Open");
+  const openMemoExposure = openMemos.reduce((sum, m) => sum + memoExposure(m), 0);
 
   return (
     <Sheet open onOpenChange={(next) => !next && close()}>
@@ -110,8 +92,8 @@ export function CustomerDetailPanel() {
             <p className="text-lg font-semibold mt-1">{formatCurrency(openMemoExposure)}</p>
           </div>
           <div className="rounded-lg border p-4">
-            <p className="text-xs text-muted-foreground">Active sales orders</p>
-            <p className="text-lg font-semibold mt-1">{activeOrders}</p>
+            <p className="text-xs text-muted-foreground">Open memos</p>
+            <p className="text-lg font-semibold mt-1">{openMemos.length}</p>
           </div>
         </div>
 
@@ -157,83 +139,6 @@ export function CustomerDetailPanel() {
                 <p className="text-xs text-muted-foreground mt-4 mb-1">Notes</p>
                 <p className="text-sm">{customer.notes}</p>
               </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Quotes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {quotes.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Quote</TableHead>
-                    <TableHead className="text-right">Value</TableHead>
-                    <TableHead>Expires</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {quotes.map((quote) => {
-                    const total = quote.lines.reduce((s, l) => s + l.lineTotal, 0);
-                    const expired = isQuoteExpired(quote);
-                    return (
-                      <TableRow key={quote.id} className="cursor-pointer" onClick={() => navigate(`/quotes/${quote.id}`)}>
-                        <TableCell className="font-medium">{quote.id}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(total, quote.currency)}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{formatDateShort(quote.expiresAt)}</TableCell>
-                        <TableCell>
-                          {quote.status === "Open" ? (
-                            <Badge variant={expired ? "destructive" : "secondary"}>{expired ? "Expired" : "Open"}</Badge>
-                          ) : (
-                            <Badge variant={quote.status === "Accepted" ? "success" : "outline"}>{quote.status}</Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-sm text-muted-foreground">No quotes yet.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Sales Orders</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {salesOrders.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Order</TableHead>
-                    <TableHead className="text-right">Value</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {salesOrders.map((order) => {
-                    const total = order.lines.reduce((s, l) => s + l.lineTotal, 0);
-                    return (
-                      <TableRow key={order.id} className="cursor-pointer" onClick={() => navigate(`/sales-orders/${order.id}`)}>
-                        <TableCell className="font-medium">{order.id}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(total, order.currency)}</TableCell>
-                        <TableCell>
-                          <Badge variant={SALES_ORDER_STATUS_VARIANT[order.status]}>{order.status}</Badge>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-sm text-muted-foreground">No sales orders yet.</p>
             )}
           </CardContent>
         </Card>

@@ -55,7 +55,7 @@ export function IssueMemoDialog({ open, onOpenChange, onIssued, preselectedItemI
   useEffect(() => {
     if (open) {
       listInventory().then((items) => {
-        const eligibleItems = items.filter((item) => item.status === "Available" || item.status === "Reserved");
+        const eligibleItems = items.filter((item) => item.status === "Available");
         setEligible(eligibleItems);
         if (preselectedItemId && eligibleItems.some((i) => i.id === preselectedItemId)) {
           setSelectedIds((prev) => (prev.includes(preselectedItemId) ? prev : [...prev, preselectedItemId]));
@@ -206,7 +206,7 @@ export function IssueMemoDialog({ open, onOpenChange, onIssued, preselectedItemI
         <Separator />
 
         <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">Select items to release (Available or Reserved only)</p>
+          <p className="text-xs font-medium text-muted-foreground mb-2">Select items to release (Available only)</p>
           <div className="max-h-56 overflow-y-auto space-y-1.5 border rounded-md p-2">
             {eligible.map((item) => {
               const checked = selectedIds.includes(item.id);

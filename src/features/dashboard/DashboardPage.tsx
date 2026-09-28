@@ -5,8 +5,6 @@ import { listInventory } from "@/lib/api/inventoryApi";
 import { listInvoices } from "@/lib/api/invoiceApi";
 import { listMemos } from "@/lib/api/memoApi";
 import { listPurchaseOrders } from "@/lib/api/purchaseOrderApi";
-import { listQuotes } from "@/lib/api/quoteApi";
-import { listSalesOrders } from "@/lib/api/salesOrderApi";
 import { listVendorBills } from "@/lib/api/vendorBillApi";
 import { listVendors } from "@/lib/api/vendorApi";
 import { memoExposure } from "@/lib/memo";
@@ -17,15 +15,11 @@ import type { InventoryItem } from "@/types/inventory";
 import type { Invoice } from "@/types/invoice";
 import type { MemoRecord } from "@/types/memo";
 import type { PurchaseOrder } from "@/types/purchaseOrder";
-import type { Quote } from "@/types/quote";
-import type { SalesOrder } from "@/types/salesOrder";
 import type { VendorBill } from "@/types/vendorBill";
 import {
   AlertTriangle,
   Building2,
-  ClipboardList,
   Clock,
-  FileText,
   Handshake,
   History,
   Landmark,
@@ -42,8 +36,6 @@ import { Link } from "react-router-dom";
 
 const TYPE_ICON: Record<RecentActivityType, LucideIcon> = {
   inventory: Package,
-  quote: FileText,
-  salesOrder: ClipboardList,
   invoice: Receipt,
   purchaseOrder: ShoppingCart,
   vendorBill: Landmark,
@@ -83,11 +75,9 @@ interface AttentionEntry {
 export function DashboardPage() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [memos, setMemos] = useState<MemoRecord[]>([]);
-  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [vendorBills, setVendorBills] = useState<VendorBill[]>([]);
-  const [quotes, setQuotes] = useState<Quote[]>([]);
   const [customers, setCustomers] = useState<Record<string, Customer>>({});
   const [vendors, setVendors] = useState<Record<string, Vendor>>({});
   const [recentActivity, setRecentActivity] = useState<RecentActivityEntry[]>([]);
@@ -95,11 +85,9 @@ export function DashboardPage() {
   useEffect(() => {
     listInventory().then(setItems);
     listMemos().then(setMemos);
-    listSalesOrders().then(setSalesOrders);
     listPurchaseOrders().then(setPurchaseOrders);
     listInvoices().then(setInvoices);
     listVendorBills().then(setVendorBills);
-    listQuotes().then(setQuotes);
     listCustomers().then((list) => setCustomers(Object.fromEntries(list.map((c) => [c.id, c]))));
     listVendors().then((list) => setVendors(Object.fromEntries(list.map((v) => [v.id, v]))));
     setRecentActivity(readRecentActivity());
@@ -115,7 +103,6 @@ export function DashboardPage() {
     Watch: items.filter((i) => i.category === "Watch").length,
   };
 
-  const openSalesOrders = salesOrders.filter((o) => o.status !== "Invoiced" && o.status !== "Cancelled");
   const openPurchaseOrders = purchaseOrders.filter((o) => o.status !== "Received" && o.status !== "Cancelled");
   const openInvoices = invoices.filter((i) => i.status !== "Paid" && i.status !== "Void");
   const openReceivables = openInvoices.reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
@@ -185,25 +172,6 @@ export function DashboardPage() {
     }
   });
 
-  quotes
-    .filter((q) => q.status === "Open")
-    .forEach((quote) => {
-      const days = daysSince(quote.expiresAt);
-      if (days > -ATTENTION_WINDOW_DAYS) {
-        const value = quote.lines.reduce((s, l) => s + l.lineTotal, 0);
-        attention.push({
-          key: `q-${quote.id}`,
-          type: "quote",
-          title: quote.id,
-          subtitle: `Quote · ${customers[quote.customerId]?.name ?? quote.customerId}`,
-          amount: value,
-          currency: quote.currency,
-          days,
-          path: `/quotes/${quote.id}`,
-        });
-      }
-    });
-
   attention.sort((a, b) => b.days - a.days);
   const topAttention = attention.slice(0, MAX_ATTENTION_ENTRIES);
   const recent = recentActivity.slice(0, MAX_RECENT_ENTRIES);
@@ -256,13 +224,13 @@ export function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-1">{byCategory.Diamond} diamond · {byCategory.Jewelry} jewelry · {byCategory.Watch} watch</p>
           </Card>
         </Link>
-        <Link to="/sales-orders">
+        <Link to="/memos">
           <Card className="p-5 hover:bg-muted/30 transition-colors">
             <div className="flex items-center gap-2 text-muted-foreground">
-              <ClipboardList className="h-3.5 w-3.5" />
-              <p className="text-xs">Open sales orders</p>
+              <Handshake className="h-3.5 w-3.5" />
+              <p className="text-xs">Open memos</p>
             </div>
-            <p className="text-2xl font-semibold mt-1">{openSalesOrders.length}</p>
+            <p className="text-2xl font-semibold mt-1">{openMemos.length}</p>
           </Card>
         </Link>
         <Link to="/purchase-orders">

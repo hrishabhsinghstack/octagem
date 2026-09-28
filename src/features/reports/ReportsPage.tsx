@@ -4,7 +4,7 @@ import { BarChart3 } from "lucide-react";
 const PLANNED_REPORTS = [
   { title: "Inventory aging", description: "How long stock has sat by category, location, and value band." },
   { title: "Memo aging", description: "Outstanding memo exposure by customer/vendor, days outstanding, and risk band." },
-  { title: "Sales performance", description: "Revenue and margin by category, salesperson, and customer; quote-to-order conversion." },
+  { title: "Sales performance", description: "Revenue and margin by category, salesperson, and customer; memo-to-invoice conversion." },
   { title: "Purchasing", description: "Spend by vendor, PO fulfilment lag, receiving accuracy." },
   { title: "Outstanding balances", description: "AR/AP aging buckets once vendor bills exist." },
   { title: "GMROI, turn & sell-through", description: "The core inventory-efficiency KPIs this trade actually manages by." },

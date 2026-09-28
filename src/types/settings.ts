@@ -19,10 +19,11 @@ export interface BusinessProfile {
  * Tenant-configurable process toggles — grows over time as more workflow steps become optional
  * per business (OCTAGEM-BLUEPRINT.md §5 design principle: "configuration over code for market
  * variation"). Kept as one small object so new toggles are additive, not a new settings screen each time.
+ *
+ * Currently carries no toggles: the two that lived here gated Quotes and Sales Orders, and those
+ * documents were removed — the sales chain is Memo → Invoice, with a direct invoice as the other way
+ * in. The type, its Settings panel and RequireWorkflowSetting are kept on purpose: they are the seam
+ * the next toggle drops into. Typed as a Record rather than an empty interface so it stays assignable
+ * and lint-clean while empty.
  */
-export interface WorkflowSettings {
-  /** On (default): the Quotes module is visible and usable. Off: Quotes disappears from the app entirely — for businesses that don't quote. */
-  quoteModuleEnabled: boolean;
-  /** Off (default): Sales Orders can be created directly. On: the primary path goes Quote → Accept → Sales Order. Meaningless (and forced off) when quoteModuleEnabled is off. */
-  requireQuoteBeforeSalesOrder: boolean;
-}
+export type WorkflowSettings = Record<string, never>;

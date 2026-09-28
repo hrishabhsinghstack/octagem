@@ -5,12 +5,20 @@
  * movement history) so the real ledger engine can replace `ledger`/`status` without renaming
  * anything call sites depend on.
  */
-export type InventoryCategory = "Diamond" | "Jewelry" | "Watch";
+/** The categories that ship with the product and carry typed attribute blocks (diamond/jewelry/watch). */
+export type BuiltInCategory = "Diamond" | "Jewelry" | "Watch";
+
+/**
+ * Key of a CategoryDefinition (types/catalog.ts). Built-in keys match BuiltInCategory; tenants add
+ * their own, whose attributes live in InventoryItem.attributes rather than a typed block.
+ */
+export type InventoryCategory = string;
 
 /** §7.1 — a stone/watch is UNIQUE, a parcel is LOT, a repeatable jewelry style is QUANTITY. */
 export type IdentityModel = "UNIQUE" | "LOT" | "QUANTITY";
 
-export type ItemStatus = "Available" | "On memo out" | "Reserved" | "Verification hold" | "Sold" | "Returned to vendor";
+/** "Reserved" was dropped with Sales Orders — allocation was the only thing that ever set it. Stored items still carrying it migrate back to Available; see store/inventoryStore.ts. */
+export type ItemStatus = "Available" | "On memo out" | "Verification hold" | "Sold" | "Returned to vendor";
 
 /** §2.2/§13.5 — ownership is independent of status: a consigned item is fully sellable (status Available) but not owned until it sells. */
 export type ItemOwnership = "OWNED" | "CONSIGNED_IN";
@@ -30,6 +38,8 @@ export interface LedgerEntry {
     | "PRODUCTION_CONSUMPTION";
   note: string;
   actor: string;
+  /** Set on movements written by a spreadsheet import, so the import can be undone precisely. */
+  batchId?: string;
 }
 
 export interface FancyColor {
@@ -193,6 +203,8 @@ export interface InventoryItem {
   code: string;
   category: InventoryCategory;
   identityModel: IdentityModel;
+  /** Piece count for LOT and QUANTITY stock. Absent for UNIQUE items, which are always exactly one. */
+  quantity?: number;
   title: string;
   description: string;
   status: ItemStatus;
@@ -213,6 +225,8 @@ export interface InventoryItem {
   diamond?: DiamondAttributes;
   jewelry?: JewelryAttributes;
   watch?: WatchAttributes;
+  /** Values for catalog fields with an `attributes.*` path — tenant-category fields and market-pack fields (types/catalog.ts). */
+  attributes?: Record<string, string | number | boolean | string[]>;
   /** Tenant-defined extra fields, keyed by CustomFieldDefinition.id — see types/customField.ts. */
   customFields?: Record<string, string | number | boolean>;
   media: MediaAsset[];

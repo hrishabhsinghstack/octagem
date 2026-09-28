@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { toast } from "sonner";
+import { getNumberLocale } from "@/lib/store/catalogStore";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -22,7 +23,7 @@ export function formatDateShort(date: Date | string | null, locale = "en-GB"): s
 }
 
 export function formatCurrency(value: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat(getNumberLocale(), { style: "currency", currency, maximumFractionDigits: 0 }).format(value);
 }
 
 export function formatRelativeTime(date: Date | string): string {

@@ -1,8 +1,8 @@
 import type { MemoRecord } from "@/types/memo";
 import { daysFromToday } from "@/lib/memo";
 
-const line = (memoId: string, itemId: string, priceBasis: string, lineTotal: number): MemoRecord["lines"][number] => ({
-  id: `${memoId}-L1`,
+const line = (memoId: string, itemId: string, priceBasis: string, lineTotal: number, index = 1): MemoRecord["lines"][number] => ({
+  id: `${memoId}-L${index}`,
   itemId,
   priceBasis,
   quantity: 1,
@@ -24,7 +24,13 @@ export const mockMemos: MemoRecord[] = [
     trackingNumber: "",
     salesperson: "Devesh Rao",
     salespersonCommissionPct: 2.5,
-    lines: [line("M-1001", "D-1077", "22% off Rap · $5,800/ct", 4650)],
+    // A multi-line selection — the ordinary case where a buyer takes several pieces on approval and
+    // ends up keeping some. Partial convert/return only shows itself on a memo like this.
+    lines: [
+      line("M-1001", "D-1077", "22% off Rap · $5,800/ct", 4650, 1),
+      line("M-1001", "D-1103", "20% off Rap · $6,100/ct", 5200, 2),
+      line("M-1001", "J-2031", "Tag price $4,400, memo at $4,050", 4050, 3),
+    ],
     issuedAt: "2026-08-09",
     dueDate: daysFromToday(12),
     status: "Open",

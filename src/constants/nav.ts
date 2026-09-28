@@ -1,6 +1,6 @@
 import type { PermissionModule } from "@/types/rbac";
 import type { WorkflowSettings } from "@/types/settings";
-import { BarChart3, Building2, ClipboardList, CreditCard, FileText, Gem, Handshake, LayoutDashboard, Receipt, ShoppingCart, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Building2, CreditCard, Gem, Handshake, LayoutDashboard, PackageCheck, Receipt, ShoppingCart, Users, type LucideIcon } from "lucide-react";
 
 export interface NavItem {
   title: string;
@@ -30,28 +30,22 @@ export const navGroups: NavGroup[] = [
     title: "Purchasing",
     children: [
       { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart, module: "purchaseOrders" },
+      { title: "Memo In", url: "/memo-in", icon: PackageCheck, module: "memoIn" },
+      { title: "Vendor Bills", url: "/vendor-bills", icon: Receipt, module: "vendorBills" },
       { title: "Vendors", url: "/vendors", icon: Building2, module: "vendors" },
     ],
   },
   {
     title: "Sales",
     children: [
-      { title: "Quotes", url: "/quotes", icon: FileText, module: "quotes", workflowCheck: (s) => s.quoteModuleEnabled },
-      { title: "Sales Orders", url: "/sales-orders", icon: ClipboardList, module: "salesOrders" },
+      { title: "Memo", url: "/memos", icon: Handshake, module: "memoOut" },
       { title: "Invoices", url: "/invoices", icon: Receipt, module: "invoices" },
       { title: "Customers", url: "/customers", icon: Users, module: "customers" },
     ],
   },
   {
-    title: "Memo & Custody",
-    children: [{ title: "Memo", url: "/memos", icon: Handshake, module: "memoOut" }],
-  },
-  {
     title: "Finance",
-    children: [
-      { title: "Payments", url: "/payments", icon: CreditCard, module: "payments" },
-      { title: "Vendor Bills", url: "/vendor-bills", icon: Receipt, module: "vendorBills" },
-    ],
+    children: [{ title: "Payments", url: "/payments", icon: CreditCard, module: "payments" }],
   },
   {
     title: "Reports",
