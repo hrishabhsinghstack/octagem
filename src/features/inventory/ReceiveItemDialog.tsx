@@ -57,6 +57,9 @@ const SECTION_TITLES: Record<FieldSection, string> = {
 /** Sections summarised in the right-hand rail as "what this piece is". */
 const SPEC_SECTIONS: FieldSection[] = ["specification", "certificate"];
 
+/** Pixels left above a field the form scrolls to, so its section heading stays visible for context. */
+const SCROLL_HEADROOM = 80;
+
 /** Fields that read better across more of the grid width. */
 const WIDE_FIELDS = new Set(["title", "description", "location"]);
 
@@ -254,15 +257,24 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
    * be explicit or a failed save looks like nothing happened.
    */
   const revealFirstError = () => {
-    const target = blockingFields[0]?.key ?? (consignmentError ? "consignment-value" : undefined);
-    if (!target) return;
-    // Open any "More details" section holding the field, or scrolling lands on a collapsed block.
     const field = blockingFields[0];
+    // CatalogFieldInput ids its control `field-<key>`; the consignment inputs are plain and own their id.
+    const targetId = field ? `field-${field.key}` : consignmentError ? "consignment-value" : undefined;
+    if (!targetId) return;
+    // Open the "More details" collapse holding the field, or scrolling lands on a hidden block.
     if (field?.tier === "detail") setExpanded((current) => new Set(current).add(field.section));
+    // After the collapse has rendered, so the field has a layout position to scroll to.
     requestAnimationFrame(() => {
-      const node = bodyRef.current?.querySelector<HTMLElement>(`[data-field="${CSS.escape(target)}"], #${CSS.escape(target)}`);
-      node?.scrollIntoView({ behavior: "smooth", block: "center" });
-      node?.querySelector<HTMLElement>("input, select, textarea, button")?.focus({ preventScroll: true });
+      const body = bodyRef.current;
+      const control = body?.querySelector<HTMLElement>(`#${CSS.escape(targetId)}`);
+      if (!body || !control) return;
+      // Scroll the labelled block, not the bare input, so it's clear which field is being pointed at.
+      // Offset arithmetic rather than scrollIntoView: the latter is a no-op on this nested flex
+      // scroller, and would also scroll the page behind the sheet if it did fire.
+      const block = control.closest("[class*='space-y-1']") ?? control;
+      const top = body.scrollTop + block.getBoundingClientRect().top - body.getBoundingClientRect().top - SCROLL_HEADROOM;
+      body.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      control.focus({ preventScroll: true });
     });
   };
 
@@ -379,32 +391,47 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
     );
   };
 
-  const renderSections = (stepIndex: number) => {
-    const stepFields = visibleFields(fieldsForStep(fields, stepIndex), raw);
-    const sections = STEP_SECTIONS[stepIndex].filter((s) => stepFields.some((f) => f.section === s));
-    return sections.map((section) => {
-      const inSection = stepFields.filter((f) => f.section === section);
-      const essential = inSection.filter((f) => f.tier !== "detail");
-      const detail = inSection.filter((f) => f.tier === "detail");
-      // Details open themselves when they hold a value or an error — nothing entered is ever hidden.
-      const open = expanded.has(section) || detail.some((f) => !isBlank(raw[f.key]) || shownError(f));
-      const toggle = () => setExpanded((current) => { const next = new Set(current); if (next.has(section)) next.delete(section); else next.add(section); return next; });
-      return (
-        <div key={section} className="space-y-3">
-          {stepIndex === 1 && SECTION_TITLES[section] && <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{SECTION_TITLES[section]}</p>}
-          {essential.length > 0 && <div className="grid grid-cols-3 gap-4">{essential.map(renderField)}</div>}
-          {detail.length > 0 && (
-            <>
-              <button type="button" onClick={toggle} aria-expanded={open} className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
-                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
-                {open ? "Fewer details" : `More ${(SECTION_TITLES[section] ?? "").toLowerCase() || "pricing"} details (${detail.length})`}
-              </button>
-              {open && <div className="grid grid-cols-3 gap-4 rounded-md bg-muted/30 p-3">{detail.map(renderField)}</div>}
-            </>
-          )}
+  /**
+   * One section of the form: a heading, the essential fields in a 3-up grid, and a "More details"
+   * collapse for the `tier: "detail"` fields so the ~30 fields a Diamond can carry don't all land at
+   * once. `extra` is section-specific content that isn't catalog-driven (the BOM editor, the
+   * consignment inputs).
+   */
+  const renderSection = (section: FieldSection, extra?: React.ReactNode) => {
+    const inSection = visibleFields(fieldsForSection(fields, section), raw);
+    if (inSection.length === 0 && !extra) return null;
+
+    const essential = inSection.filter((f) => f.tier !== "detail");
+    const detail = inSection.filter((f) => f.tier === "detail");
+    // Details open themselves when they hold a value or an error — nothing entered is ever hidden.
+    const open = expanded.has(section) || detail.some((f) => !isBlank(raw[f.key]) || shownError(f));
+    const toggle = () =>
+      setExpanded((current) => {
+        const next = new Set(current);
+        if (next.has(section)) next.delete(section);
+        else next.add(section);
+        return next;
+      });
+
+    return (
+      <section key={section} className="space-y-3 scroll-mt-4">
+        <div className="flex items-center gap-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">{SECTION_TITLES[section]}</h3>
+          <div className="h-px flex-1 bg-border" />
         </div>
-      );
-    });
+        {essential.length > 0 && <div className="grid grid-cols-3 gap-4">{essential.map(renderField)}</div>}
+        {extra}
+        {detail.length > 0 && (
+          <>
+            <button type="button" onClick={toggle} aria-expanded={open} className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+              {open ? "Fewer details" : `More ${SECTION_TITLES[section].toLowerCase()} details (${detail.length})`}
+            </button>
+            {open && <div className="grid grid-cols-3 gap-4 rounded-md bg-muted/30 p-3">{detail.map(renderField)}</div>}
+          </>
+        )}
+      </section>
+    );
   };
 
   const activeLabels = (key: string) => lookups.getList(key).filter((e) => e.active).map((e) => e.label);
@@ -422,7 +449,7 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
   const cost = isConsignment ? parseNumber(consignmentValue) : (validation.values.cost as number | undefined);
   const asking = validation.values.askingPrice as number | undefined;
   const margin = typeof cost === "number" && asking ? Math.round(((asking - cost) / asking) * 100) : null;
-  const specSummary = visibleFields(fieldsForStep(fields, 1), raw)
+  const specSummary = visibleFields(fieldsInSections(fields, SPEC_SECTIONS), raw)
     .filter((f) => f.required && validation.values[f.key] !== undefined && f.type !== "boolean")
     .slice(0, 4);
   const canCopyLast = !isEditing && lastSaved.has(categoryKey);
@@ -430,117 +457,96 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent size="formLg" className="p-0 gap-0 h-full flex flex-col overflow-hidden">
-        {/* Header + stepper */}
-        <div className="px-6 pt-5 pb-4 border-b shrink-0">
-          <h2 className="text-lg font-semibold">{isEditing ? `Edit ${editItem?.code}` : isConsignment ? "Receive on consignment" : "Receive inventory"}</h2>
-          <div className="flex items-center gap-2 mt-3">
-            {STEPS.map((label, index) => {
-              const isDone = index < step;
-              const isCurrent = index === step;
-              const flagged = attempted.has(index) && stepErrorCount(index) > 0;
-              return (
-                <div key={label} className="flex items-center gap-2 flex-1">
-                  <button
-                    type="button"
-                    onClick={() => index < step && setStep(index)}
-                    disabled={index >= step}
-                    aria-label={`Step ${index + 1}: ${label}`}
-                    className={cn(
-                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium",
-                      isDone && !flagged && "bg-primary text-primary-foreground",
-                      isCurrent && !flagged && "border-2 border-primary text-primary",
-                      flagged && "border-2 border-destructive text-destructive",
-                      !isDone && !isCurrent && !flagged && "border text-muted-foreground"
-                    )}
-                  >
-                    {isDone && !flagged ? <Check className="h-3.5 w-3.5" /> : index + 1}
-                  </button>
-                  <span className={cn("text-xs whitespace-nowrap", isCurrent ? "font-medium text-foreground" : "text-muted-foreground")}>{label}</span>
-                  {index < STEPS.length - 1 && <div className={cn("h-px flex-1", isDone ? "bg-primary" : "bg-border")} />}
-                </div>
-              );
-            })}
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b shrink-0 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">{isEditing ? `Edit ${editItem?.code}` : isConsignment ? "Receive on consignment" : "Receive inventory"}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {isEditing ? "Change any detail — status and custody are unaffected." : "Fill what you know; only starred fields are required."}
+            </p>
           </div>
+          {submitAttempted && errorCount > 0 && (
+            <button type="button" onClick={revealFirstError} className="text-xs font-medium text-destructive hover:underline shrink-0 mt-1">
+              {errorCount} field{errorCount === 1 ? "" : "s"} need attention
+            </button>
+          )}
         </div>
 
-        {/* Body: step content + live summary rail */}
+        {/* Body: one scrolling column of sections + live summary rail */}
         <div className="flex-1 flex min-h-0">
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-            {step === 0 && (
-              <>
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-xs text-muted-foreground">Category</Label>
-                    {canCopyLast && (
-                      <Button type="button" variant="ghost" size="sm" onClick={copyFromLast} className="h-7 text-xs">
-                        <Copy className="h-3 w-3 mr-1" /> Copy from last item
-                      </Button>
-                    )}
+          <div ref={bodyRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-7">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-xs text-muted-foreground">Category</Label>
+                {canCopyLast && (
+                  <Button type="button" variant="ghost" size="sm" onClick={copyFromLast} className="h-7 text-xs">
+                    <Copy className="h-3 w-3 mr-1" /> Copy from last item
+                  </Button>
+                )}
+              </div>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
+                {(isEditing && category ? [category] : categories).map((option) => {
+                  const Icon = categoryIcon(option.icon);
+                  const selected = categoryKey === option.key;
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      disabled={isEditing}
+                      aria-pressed={selected}
+                      onClick={() => chooseCategory(option.key)}
+                      className={cn(
+                        "flex flex-col items-center gap-1.5 rounded-lg border py-3 transition-colors",
+                        selected ? "border-primary bg-primary/5 text-primary" : "hover:bg-muted/50 text-muted-foreground"
+                      )}
+                    >
+                      <Icon className="h-5 w-5" />
+                      <span className="text-xs font-medium">{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {renderSection("identity")}
+            {renderSection("specification")}
+            {renderSection("certificate")}
+            {renderSection("components", categoryKey === "Jewelry" ? <BomEditor components={components} onChange={setComponents} lists={bomLists} /> : undefined)}
+            {renderSection("market")}
+            {renderSection("custom")}
+
+            {visibleFields(fieldsInSections(fields, SPEC_SECTIONS), raw).length === 0 && categoryKey !== "Jewelry" && (
+              <p className="text-sm text-muted-foreground">{category?.label} has no specification fields yet — add them in Settings → Inventory Catalog.</p>
+            )}
+
+            {renderSection(
+              "pricing",
+              isConsignment ? (
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="consignment-value" className="text-xs text-muted-foreground">
+                      Consignment value<span className="text-destructive ml-0.5">*</span>
+                    </Label>
+                    <Input
+                      id="consignment-value"
+                      inputMode="decimal"
+                      value={consignmentValue}
+                      onChange={(e) => setConsignmentValue(e.target.value)}
+                      className={cn("tabular-nums", submitAttempted && consignmentError && "border-destructive")}
+                    />
+                    {submitAttempted && consignmentError && <p className="text-xs text-destructive">{consignmentError}</p>}
                   </div>
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
-                    {(isEditing && category ? [category] : categories).map((option) => {
-                      const Icon = categoryIcon(option.icon);
-                      const selected = categoryKey === option.key;
-                      return (
-                        <button
-                          key={option.key}
-                          type="button"
-                          disabled={isEditing}
-                          aria-pressed={selected}
-                          onClick={() => chooseCategory(option.key)}
-                          className={cn(
-                            "flex flex-col items-center gap-1.5 rounded-lg border py-3 transition-colors",
-                            selected ? "border-primary bg-primary/5 text-primary" : "hover:bg-muted/50 text-muted-foreground"
-                          )}
-                        >
-                          <Icon className="h-5 w-5" />
-                          <span className="text-xs font-medium">{option.label}</span>
-                        </button>
-                      );
-                    })}
+                  <div className="space-y-1 col-span-2">
+                    <Label htmlFor="consignment-basis" className="text-xs text-muted-foreground">
+                      Price basis
+                    </Label>
+                    <Input id="consignment-basis" value={consignmentPriceBasis} onChange={(e) => setConsignmentPriceBasis(e.target.value)} placeholder="e.g. $5,800 net if sold" />
                   </div>
                 </div>
-                {renderSections(0)}
-              </>
+              ) : undefined
             )}
 
-            {step === 1 && (
-              <>
-                {renderSections(1)}
-                {categoryKey === "Jewelry" && <BomEditor components={components} onChange={setComponents} lists={bomLists} />}
-                {visibleFields(fieldsForStep(fields, 1), raw).length === 0 && categoryKey !== "Jewelry" && (
-                  <p className="text-sm text-muted-foreground">{category?.label} has no specification fields yet — add them in Settings → Inventory Catalog.</p>
-                )}
-              </>
-            )}
-
-            {step === 2 && (
-              <>
-                {isConsignment && (
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <Label htmlFor="consignment-value" className="text-xs text-muted-foreground">
-                        Consignment value<span className="text-destructive ml-0.5">*</span>
-                      </Label>
-                      <Input
-                        id="consignment-value"
-                        inputMode="decimal"
-                        value={consignmentValue}
-                        onChange={(e) => setConsignmentValue(e.target.value)}
-                        className={cn("tabular-nums", attempted.has(2) && consignmentError && "border-destructive")}
-                      />
-                      {attempted.has(2) && consignmentError && <p className="text-xs text-destructive">{consignmentError}</p>}
-                    </div>
-                    <div className="space-y-1 col-span-2">
-                      <Label htmlFor="consignment-basis" className="text-xs text-muted-foreground">
-                        Price basis
-                      </Label>
-                      <Input id="consignment-basis" value={consignmentPriceBasis} onChange={(e) => setConsignmentPriceBasis(e.target.value)} placeholder="e.g. $5,800 net if sold" />
-                    </div>
-                  </div>
-                )}
-                {renderSections(2)}
-                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                   {isEditing ? (
                     "Saving logs a details-updated movement on this item's ledger — status and custody are unaffected."
                   ) : isConsignment ? (
@@ -552,9 +558,7 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
                       The item enters Receiving with an immutable receipt movement, and status <span className="font-medium text-foreground">Available</span>.
                     </>
                   )}
-                </div>
-              </>
-            )}
+            </div>
           </div>
 
           {/* Live summary rail */}
@@ -617,24 +621,18 @@ export function ReceiveItemDialog({ open, onOpenChange, onSaved, editItem, prefi
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t px-6 py-4 shrink-0">
-          <Button variant="ghost" onClick={() => (step === 0 ? onOpenChange(false) : setStep((s) => s - 1))}>
-            {step === 0 ? "Cancel" : "Back"}
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
           </Button>
           <div className="flex items-center gap-2">
-            {step < STEPS.length - 1 ? (
-              <Button onClick={goNext}>Continue</Button>
-            ) : (
-              <>
-                {!isEditing && !prefill && (
-                  <Button variant="outline" onClick={() => handleSubmit(true)} disabled={saving}>
-                    Save &amp; add another
-                  </Button>
-                )}
-                <Button onClick={() => handleSubmit(false)} disabled={saving}>
-                  {saving ? "Saving…" : isEditing ? "Save changes" : isConsignment ? "Receive on consignment" : "Receive into inventory"}
-                </Button>
-              </>
+            {!isEditing && !prefill && (
+              <Button variant="outline" onClick={() => handleSubmit(true)} disabled={saving}>
+                Save &amp; add another
+              </Button>
             )}
+            <Button onClick={() => handleSubmit(false)} disabled={saving}>
+              {saving ? "Saving…" : isEditing ? "Save changes" : isConsignment ? "Receive on consignment" : "Receive into inventory"}
+            </Button>
           </div>
         </div>
       </SheetContent>

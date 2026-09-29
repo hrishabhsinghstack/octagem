@@ -47,6 +47,8 @@ export function CatalogFieldInput({ field, value, onChange, onBlur, options = []
     case "select":
       control = (
         <SearchSelect
+          id={id}
+          aria-describedby={describedBy}
           value={inputValue(value)}
           onChange={onChange}
           options={options}

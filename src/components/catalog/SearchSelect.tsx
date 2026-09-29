@@ -7,6 +7,12 @@ import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { useState } from "react";
 
 interface SearchSelectProps {
+  /**
+   * Put on the trigger button, so a `<label for>` actually resolves and the form can focus this
+   * field when it scrolls to a validation error. Without it the label pointed at nothing.
+   */
+  id?: string;
+  "aria-describedby"?: string;
   value: string;
   onChange: (value: string) => void;
   options: string[];
@@ -44,7 +50,20 @@ function rank(item: string, query: string): number {
  * Type-to-filter dropdown for master-data values. Matching ignores case and separators, so "vs1"
  * finds VS1 — the same normalisation the validator uses, so what the search finds is what saves.
  */
-export function SearchSelect({ value, onChange, options, placeholder = "Select…", disabled, invalid, allowCustom, onAddOption, clearable, className }: SearchSelectProps) {
+export function SearchSelect({
+  id,
+  "aria-describedby": describedBy,
+  value,
+  onChange,
+  options,
+  placeholder = "Select…",
+  disabled,
+  invalid,
+  allowCustom,
+  onAddOption,
+  clearable,
+  className,
+}: SearchSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -60,11 +79,13 @@ export function SearchSelect({ value, onChange, options, placeholder = "Select�
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
           type="button"
           variant="outline"
           role="combobox"
           aria-expanded={open}
           aria-invalid={invalid || undefined}
+          aria-describedby={describedBy}
           disabled={disabled}
           className={cn("w-full justify-between font-normal px-3", !value && "text-muted-foreground", invalid && "border-destructive", className)}
         >

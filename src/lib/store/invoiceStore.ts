@@ -3,12 +3,21 @@ import type { Invoice } from "@/types/invoice";
 
 const STORAGE_KEY = "octagem.invoices.local";
 
+/** Backfills fields added after a record was first persisted, so old localStorage data doesn't crash newer code. */
 function migrate(invoices: Invoice[]): { invoices: Invoice[]; changed: boolean } {
   let changed = false;
   const migrated = invoices.map((invoice) => {
-    if (invoice.currency) return invoice;
-    changed = true;
-    return { ...invoice, currency: "USD", fxRateToBase: 1 };
+    let next = invoice;
+    if (!next.currency) {
+      changed = true;
+      next = { ...next, currency: "USD", fxRateToBase: 1 };
+    }
+    // `sends` predates nothing but is read unguarded (invoice.sends.length), so it must always be an array.
+    if (!Array.isArray(next.sends)) {
+      changed = true;
+      next = { ...next, sends: [] };
+    }
+    return next;
   });
   return { invoices: migrated, changed };
 }
@@ -54,6 +63,11 @@ export function update(id: string, patch: Partial<Invoice>): Invoice | undefined
   invoices[index] = { ...invoices[index], ...patch };
   writeAll(invoices);
   return invoices[index];
+}
+
+/** Only ever called for a Draft — see invoiceApi.deleteDraftInvoice. Issued invoices are voided, not removed. */
+export function remove(id: string) {
+  writeAll(readAll().filter((i) => i.id !== id));
 }
 
 export function nextInvoiceId(): string {

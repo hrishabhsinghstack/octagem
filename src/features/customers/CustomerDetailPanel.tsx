@@ -6,21 +6,16 @@ import { getCustomer } from "@/lib/api/customerApi";
 import { listInvoices } from "@/lib/api/invoiceApi";
 import { listMemos } from "@/lib/api/memoApi";
 import { getList } from "@/lib/store/masterDataStore";
+import { countsAsInvoiced, countsTowardsReceivables } from "@/lib/invoice";
 import { deriveMemoRisk, memoExposure } from "@/lib/memo";
 import { recordRecentActivity } from "@/lib/recentActivity";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import type { Customer } from "@/types/party";
-import type { Invoice, InvoiceStatus } from "@/types/invoice";
+import { InvoiceStatusBadge } from "@/features/invoicing/invoiceBadges";
+import type { Invoice } from "@/types/invoice";
 import type { MemoRecord, MemoRisk } from "@/types/memo";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-
-const INVOICE_STATUS_VARIANT: Record<InvoiceStatus, "default" | "secondary" | "outline" | "success" | "warning" | "destructive"> = {
-  Open: "warning",
-  "Partially paid": "secondary",
-  Paid: "success",
-  Void: "destructive",
-};
 
 const RISK_VARIANT: Record<MemoRisk, "success" | "warning" | "destructive"> = {
   Healthy: "success",
@@ -59,8 +54,9 @@ export function CustomerDetailPanel() {
 
   const taxRateLabel = customer.taxRateId ? getList("taxRates", false).find((t) => t.id === customer.taxRateId)?.label : undefined;
 
-  const lifetimeInvoiced = invoices.filter((i) => i.status !== "Void").reduce((sum, i) => sum + i.total, 0);
-  const openBalance = invoices.filter((i) => i.status !== "Void").reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
+  // Both exclude Drafts: a draft has sold nothing, so it is neither revenue nor a receivable.
+  const lifetimeInvoiced = invoices.filter(countsAsInvoiced).reduce((sum, i) => sum + i.total, 0);
+  const openBalance = invoices.filter(countsTowardsReceivables).reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
   const openMemos = memos.filter((m) => m.status === "Open");
   const openMemoExposure = openMemos.reduce((sum, m) => sum + memoExposure(m), 0);
 
@@ -165,7 +161,7 @@ export function CustomerDetailPanel() {
                       <TableCell className="text-right">{formatCurrency(invoice.total, invoice.currency)}</TableCell>
                       <TableCell className="text-right font-medium">{formatCurrency(invoice.total - invoice.paidAmount, invoice.currency)}</TableCell>
                       <TableCell>
-                        <Badge variant={INVOICE_STATUS_VARIANT[invoice.status]}>{invoice.status}</Badge>
+                        <InvoiceStatusBadge status={invoice.status} />
                       </TableCell>
                     </TableRow>
                   ))}

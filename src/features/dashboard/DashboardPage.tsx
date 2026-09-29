@@ -7,6 +7,7 @@ import { listMemos } from "@/lib/api/memoApi";
 import { listPurchaseOrders } from "@/lib/api/purchaseOrderApi";
 import { listVendorBills } from "@/lib/api/vendorBillApi";
 import { listVendors } from "@/lib/api/vendorApi";
+import { countsTowardsReceivables } from "@/lib/invoice";
 import { memoExposure } from "@/lib/memo";
 import { readRecentActivity, type RecentActivityEntry, type RecentActivityType } from "@/lib/recentActivity";
 import { formatCurrency, formatRelativeTime } from "@/lib/utils";
@@ -104,7 +105,8 @@ export function DashboardPage() {
   };
 
   const openPurchaseOrders = purchaseOrders.filter((o) => o.status !== "Received" && o.status !== "Cancelled");
-  const openInvoices = invoices.filter((i) => i.status !== "Paid" && i.status !== "Void");
+  // Excludes Drafts — an unissued invoice is not money anyone owes yet.
+  const openInvoices = invoices.filter(countsTowardsReceivables);
   const openReceivables = openInvoices.reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
   const openVendorBills = vendorBills.filter((b) => b.status !== "Paid" && b.status !== "Void");
   const openPayables = openVendorBills.reduce((sum, b) => sum + (b.total - b.paidAmount), 0);
