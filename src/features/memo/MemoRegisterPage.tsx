@@ -3,12 +3,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { IssueMemoDialog } from "@/features/memo/IssueMemoDialog";
+import { useDataRefresh } from "@/hooks/useDataRefresh";
 import { listMemos } from "@/lib/api/memoApi";
 import { deriveMemoRisk, memoExposure } from "@/lib/memo";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import type { MemoRecord, MemoRisk } from "@/types/memo";
 import { Plus, ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 
 const RISK_VARIANT: Record<MemoRisk, "success" | "warning" | "destructive"> = {
@@ -29,9 +30,7 @@ export function MemoRegisterPage() {
 
   const refresh = () => listMemos().then(setMemos);
 
-  useEffect(() => {
-    refresh();
-  }, []);
+  useDataRefresh(refresh);
 
   const open = memos.filter((m) => m.status === "Open");
   const totalExposure = open.reduce((sum, m) => sum + memoExposure(m), 0);

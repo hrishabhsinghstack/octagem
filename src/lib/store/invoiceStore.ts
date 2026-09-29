@@ -1,4 +1,5 @@
 import { mockInvoices } from "@/data/mockInvoices";
+import { notifyDataChanged } from "@/lib/store/changes";
 import type { Invoice } from "@/types/invoice";
 
 const STORAGE_KEY = "octagem.invoices.local";
@@ -39,6 +40,7 @@ function readAll(): Invoice[] {
 
 function writeAll(invoices: Invoice[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(invoices));
+  notifyDataChanged();
 }
 
 export function getAll(): Invoice[] {

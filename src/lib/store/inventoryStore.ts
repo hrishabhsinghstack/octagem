@@ -1,4 +1,5 @@
 import { mockInventory } from "@/data/mockInventory";
+import { notifyDataChanged } from "@/lib/store/changes";
 import type { InventoryItem, LedgerEntry } from "@/types/inventory";
 
 /**
@@ -58,6 +59,7 @@ function writeAll(items: InventoryItem[]) {
   } catch {
     throw new InventoryStorageError("Browser storage is full. Remove an unused photo elsewhere and try again.");
   }
+  notifyDataChanged();
 }
 
 export function getAll(): InventoryItem[] {

@@ -1,4 +1,5 @@
 import { mockMemos } from "@/data/mockMemos";
+import { notifyDataChanged } from "@/lib/store/changes";
 import { getAll as getAllCustomers } from "@/lib/store/customerStore";
 import type { MemoRecord } from "@/types/memo";
 
@@ -49,6 +50,7 @@ function readAll(): MemoRecord[] {
 
 function writeAll(memos: MemoRecord[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(memos));
+  notifyDataChanged();
 }
 
 export function getAll(): MemoRecord[] {

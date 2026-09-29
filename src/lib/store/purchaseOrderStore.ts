@@ -1,4 +1,5 @@
 import { mockPurchaseOrders } from "@/data/mockPurchaseOrders";
+import { notifyDataChanged } from "@/lib/store/changes";
 import type { PurchaseOrder } from "@/types/purchaseOrder";
 
 const STORAGE_KEY = "octagem.purchaseOrders.local";
@@ -30,6 +31,7 @@ function readAll(): PurchaseOrder[] {
 
 function writeAll(orders: PurchaseOrder[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+  notifyDataChanged();
 }
 
 export function getAll(): PurchaseOrder[] {

@@ -6,6 +6,7 @@ import { Can } from "@/components/rbac/Can";
 import { useAuth } from "@/contexts/authContext";
 import { InvoiceEditorDialog } from "@/features/invoicing/InvoiceEditorDialog";
 import { InvoiceSentBadge, InvoiceStatusBadge } from "@/features/invoicing/invoiceBadges";
+import { useDataRefresh } from "@/hooks/useDataRefresh";
 import { listCustomers } from "@/lib/api/customerApi";
 import { listInvoices } from "@/lib/api/invoiceApi";
 import { countsTowardsReceivables, isAwaitingSend } from "@/lib/invoice";
@@ -13,7 +14,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 import type { Invoice, InvoiceStatus } from "@/types/invoice";
 import type { Customer } from "@/types/party";
 import { Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 
 const STATUSES: InvoiceStatus[] = ["Draft", "Open", "Partially paid", "Paid", "Void"];
@@ -33,7 +34,7 @@ export function InvoiceListPage() {
     listInvoices().then(setInvoices);
     listCustomers().then((list) => setCustomers(Object.fromEntries(list.map((c) => [c.id, c]))));
   };
-  useEffect(refresh, []);
+  useDataRefresh(refresh);
 
   const scope = scopeFor("invoices");
   const scoped = useMemo(() => (scope === "own" ? invoices.filter((i) => i.salesperson === session?.name) : invoices), [invoices, scope, session?.name]);

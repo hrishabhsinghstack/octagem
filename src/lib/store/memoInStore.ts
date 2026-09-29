@@ -1,4 +1,5 @@
 import { mockMemoIn } from "@/data/mockMemoIn";
+import { notifyDataChanged } from "@/lib/store/changes";
 import type { MemoInRecord } from "@/types/memoIn";
 
 const STORAGE_KEY = "octagem.memoIn.local";
@@ -16,6 +17,7 @@ function readAll(): MemoInRecord[] {
 
 function writeAll(records: MemoInRecord[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  notifyDataChanged();
 }
 
 export function getAll(): MemoInRecord[] {

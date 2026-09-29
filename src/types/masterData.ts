@@ -27,6 +27,8 @@ export type MasterListKey =
   | "watchFeatures"
   | "shipViaMethods"
   | "paymentTerms"
+  | "paymentMethods"
+  | "depositAccounts"
   | "taxRates"
   | "currencies";
 
@@ -89,7 +91,19 @@ export const MASTER_LISTS: MasterListDefinition[] = [
   { key: "watchFeatures", section: "watch", title: "Watch Features", description: "Complications — chronograph, GMT, moonphase and similar." },
   { key: "shipViaMethods", section: "sales", title: "Ship Via Methods", description: "Used on memo issue." },
   { key: "paymentTerms", section: "sales", title: "Payment Terms", description: "Used on memo issue." },
-  { key: "taxRates", section: "sales", title: "Tax Rates", description: "Selectable on Quotes and Invoices.", hasNumericValue: true, numericValueLabel: "Rate %" },
+  {
+    key: "paymentMethods",
+    section: "sales",
+    title: "Payment Methods",
+    description: "How money arrives — cash, wire, card, UPI. Editable because this varies by market far more than the rest of the sales chain.",
+  },
+  {
+    key: "depositAccounts",
+    section: "sales",
+    title: "Deposit Accounts",
+    description: "Where a payment lands: bank accounts, the till, a card processor. Recorded on every payment so takings can be reconciled against a statement.",
+  },
+  { key: "taxRates", section: "sales", title: "Tax Rates", description: "Selectable on Invoices.", hasNumericValue: true, numericValueLabel: "Rate %" },
   {
     key: "currencies",
     section: "sales",

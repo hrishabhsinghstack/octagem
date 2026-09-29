@@ -1,3 +1,4 @@
+import { notifyDataChanged } from "@/lib/store/changes";
 import type { VendorPayment } from "@/types/vendorPayment";
 
 const STORAGE_KEY = "octagem.vendorPayments.local";
@@ -15,6 +16,7 @@ function readAll(): VendorPayment[] {
 
 function writeAll(payments: VendorPayment[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payments));
+  notifyDataChanged();
 }
 
 export function getAll(): VendorPayment[] {

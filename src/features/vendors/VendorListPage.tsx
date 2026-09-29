@@ -4,11 +4,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { VendorFormDialog } from "@/features/vendors/VendorFormDialog";
+import { useDataRefresh } from "@/hooks/useDataRefresh";
 import { deleteVendor, listVendors } from "@/lib/api/vendorApi";
 import { showSuccess } from "@/lib/utils";
 import type { Vendor } from "@/types/party";
 import { MoreVertical, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 
 export function VendorListPage() {
@@ -19,9 +20,7 @@ export function VendorListPage() {
   const [editing, setEditing] = useState<Vendor | null>(null);
 
   const refresh = () => listVendors().then(setVendors);
-  useEffect(() => {
-    refresh();
-  }, []);
+  useDataRefresh(refresh);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

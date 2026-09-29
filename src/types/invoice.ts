@@ -79,6 +79,13 @@ export interface Invoice {
   /** Free-text terms, warranty or disclosure printed on the document. */
   notes?: string;
   /**
+   * The document template this invoice prints with, stamped at creation. Optional on purpose: invoices
+   * created before templates existed read back as undefined and resolve through the tenant default to
+   * the built-in starter, so nothing needed migrating. Never re-derived on edit, so once stamped, a
+   * reprint keeps the layout the customer originally received.
+   */
+  templateId?: string;
+  /**
    * When the invoice last went to the customer. A flag, not a status: an invoice can be both sent and
    * partially paid, and "issued but never sent" is a list someone has to chase. Undefined means never sent.
    */

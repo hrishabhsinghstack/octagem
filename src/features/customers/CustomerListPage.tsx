@@ -5,11 +5,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CustomerFormDialog } from "@/features/customers/CustomerFormDialog";
+import { useDataRefresh } from "@/hooks/useDataRefresh";
 import { deleteCustomer, listCustomers } from "@/lib/api/customerApi";
 import { formatCurrency, showSuccess } from "@/lib/utils";
 import type { Customer } from "@/types/party";
 import { MoreVertical, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 
 export function CustomerListPage() {
@@ -20,9 +21,7 @@ export function CustomerListPage() {
   const [editing, setEditing] = useState<Customer | null>(null);
 
   const refresh = () => listCustomers().then(setCustomers);
-  useEffect(() => {
-    refresh();
-  }, []);
+  useDataRefresh(refresh);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

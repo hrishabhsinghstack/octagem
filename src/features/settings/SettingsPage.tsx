@@ -5,6 +5,7 @@ import { MasterDataSettings } from "@/components/settings/MasterDataSettings";
 import { ProfileSettings } from "@/components/settings/ProfileSettings";
 import { RolesSettings } from "@/components/settings/rbac/RolesSettings";
 import { SettingsSidebar } from "@/components/settings/SettingsSidebar";
+import { DocumentTemplateSettings } from "@/components/settings/templates/DocumentTemplateSettings";
 import { UsersSettings } from "@/components/settings/UsersSettings";
 import { WorkflowSettings } from "@/components/settings/WorkflowSettings";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -25,6 +26,8 @@ export function SettingsPage() {
         return <MasterDataSettings />;
       case "catalog":
         return <InventoryCatalogSettings />;
+      case "documentTemplates":
+        return <DocumentTemplateSettings />;
       case "workflow":
         return <WorkflowSettings />;
       case "users":

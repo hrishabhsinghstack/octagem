@@ -1,4 +1,5 @@
 import { mockVendors } from "@/data/mockVendors";
+import { notifyDataChanged } from "@/lib/store/changes";
 import type { Vendor } from "@/types/party";
 
 const STORAGE_KEY = "octagem.vendors.local";
@@ -16,6 +17,7 @@ function readAll(): Vendor[] {
 
 function writeAll(vendors: Vendor[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(vendors));
+  notifyDataChanged();
 }
 
 export function getAll(): Vendor[] {

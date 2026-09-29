@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/authContext";
 import { ReceiveItemDialog } from "@/features/inventory/ReceiveItemDialog";
 import { ImportWizard } from "@/features/inventory/import/ImportWizard";
 import { IssueMemoDialog } from "@/features/memo/IssueMemoDialog";
+import { useDataRefresh } from "@/hooks/useDataRefresh";
 import { listCategories } from "@/lib/api/catalogApi";
 import { exportRows, getWorkbookSpec } from "@/lib/api/importApi";
 import { deleteItem, duplicateItem, listInventory } from "@/lib/api/inventoryApi";
@@ -76,8 +77,9 @@ export function InventoryListPage() {
     refresh();
   };
 
+  useDataRefresh(refresh);
+
   useEffect(() => {
-    refresh();
     // Include inactive categories so items already filed under one still resolve their icon and tab.
     listCategories(false).then(setCategories);
   }, []);

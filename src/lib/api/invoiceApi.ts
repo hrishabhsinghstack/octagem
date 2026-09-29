@@ -53,6 +53,8 @@ export interface InvoicePayload {
   shipping?: number;
   dueDate?: string;
   notes?: string;
+  /** Omitted on create means "whatever the tenant default resolves to at print time". */
+  templateId?: string;
 }
 
 function applyPayload(id: string, payload: InvoicePayload, base: Partial<Invoice>): Omit<Invoice, "id"> & { id: string } {
@@ -84,6 +86,8 @@ function applyPayload(id: string, payload: InvoicePayload, base: Partial<Invoice
     fxRateToBase: base.fxRateToBase ?? getCurrentFxRate(payload.currency),
     paidAmount: base.paidAmount ?? 0,
     notes: payload.notes,
+    // Stamped once and never re-derived, so a reprint keeps the layout the customer originally got.
+    templateId: payload.templateId ?? base.templateId,
     sentAt: base.sentAt,
     sends: base.sends ?? [],
   };
@@ -251,4 +255,17 @@ export async function recordInvoiceSend(id: string, payload: SendInvoicePayload)
 
 export async function voidInvoice(id: string): Promise<Invoice | undefined> {
   return store.update(id, { status: "Void" });
+}
+
+/**
+ * Re-stamps which template an invoice prints with. Allowed on an issued invoice — unlike its contents,
+ * the layout carries no financial meaning, and a business that adopts a better template wants to resend
+ * an existing invoice on it rather than void and reissue.
+ */
+export async function setInvoiceTemplate(id: string, templateId: string | undefined): Promise<Invoice> {
+  const invoice = store.getById(id);
+  if (!invoice) throw new InvoiceStateError(`Invoice ${id} no longer exists.`);
+  const saved = store.update(id, { templateId });
+  if (!saved) throw new InvoiceStateError(`Could not update ${id}.`);
+  return saved;
 }

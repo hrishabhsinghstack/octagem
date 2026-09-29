@@ -3,13 +3,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CreateMemoInDialog } from "@/features/purchasing/CreateMemoInDialog";
+import { useDataRefresh } from "@/hooks/useDataRefresh";
 import { listMemoIns } from "@/lib/api/memoInApi";
 import { listVendors } from "@/lib/api/vendorApi";
 import { formatDateShort } from "@/lib/utils";
 import type { MemoInRecord, MemoInStatus } from "@/types/memoIn";
 import type { Vendor } from "@/types/party";
 import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 
 const STATUS_VARIANT: Record<MemoInStatus, "default" | "secondary" | "outline" | "success" | "warning" | "destructive"> = {
@@ -35,7 +36,7 @@ export function MemoInListPage() {
     listVendors().then((list) => setVendors(Object.fromEntries(list.map((v) => [v.id, v]))));
   };
 
-  useEffect(refresh, []);
+  useDataRefresh(refresh);
 
   const open = records.filter((r) => r.status !== "Received");
 

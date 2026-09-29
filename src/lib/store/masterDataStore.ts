@@ -12,6 +12,14 @@ const seedEntries = (labels: string[], scopeValue?: string): MasterListEntry[] =
 const seedNumericEntries = (rows: [string, number][]): MasterListEntry[] =>
   rows.map(([label, numericValue], index) => ({ id: id("m"), label, active: true, sortOrder: index, numericValue }));
 
+/**
+ * Seeds with fixed ids instead of generated ones, for lists that transactional records point at by id.
+ * A payment stores a deposit-account id, so seed data has to be able to name one — with a generated id
+ * that is impossible, since it only exists once the list has been read for the first time.
+ */
+const seedFixedEntries = (rows: [string, string][]): MasterListEntry[] =>
+  rows.map(([entryId, label], index) => ({ id: entryId, label, active: true, sortOrder: index }));
+
 const DEFAULT_LISTS: Record<MasterListKey, () => MasterListEntry[]> = {
   diamondShapes: () => seedEntries(["Round", "Oval", "Cushion", "Emerald", "Pear", "Princess", "Marquise", "Radiant", "Asscher", "Heart"]),
   diamondColors: () => seedEntries("DEFGHIJKLMNOPQRSTUVWXYZ".split("")),
@@ -43,6 +51,13 @@ const DEFAULT_LISTS: Record<MasterListKey, () => MasterListEntry[]> = {
   ]),
   shipViaMethods: () => seedEntries(["Hand delivery", "Brinks courier", "FedEx", "UPS", "Registered mail"]),
   paymentTerms: () => seedEntries(["Net 14 on conversion", "Net 21 on conversion", "Net 30 on conversion", "Due on conversion"]),
+  paymentMethods: () => seedEntries(["Cash", "Cheque", "Bank Transfer", "Wire", "Card", "UPI", "Store credit"]),
+  depositAccounts: () =>
+    seedFixedEntries([
+      ["acct-operating", "Main Operating Account"],
+      ["acct-till", "Showroom Till"],
+      ["acct-processor", "Card Processor"],
+    ]),
   taxRates: () => seedNumericEntries([
     ["Exempt (Resale Certificate)", 0],
     ["NY Sales Tax", 8.875],

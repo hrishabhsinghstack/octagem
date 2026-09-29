@@ -1,4 +1,5 @@
 import { mockCustomers } from "@/data/mockCustomers";
+import { notifyDataChanged } from "@/lib/store/changes";
 import type { Customer } from "@/types/party";
 
 const STORAGE_KEY = "octagem.customers.local";
@@ -16,6 +17,7 @@ function readAll(): Customer[] {
 
 function writeAll(customers: Customer[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(customers));
+  notifyDataChanged();
 }
 
 export function getAll(): Customer[] {

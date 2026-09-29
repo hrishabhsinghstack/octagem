@@ -1,12 +1,13 @@
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useDataRefresh } from "@/hooks/useDataRefresh";
 import { listVendors } from "@/lib/api/vendorApi";
 import { listVendorBills } from "@/lib/api/vendorBillApi";
 import { formatCurrency } from "@/lib/utils";
 import type { Vendor } from "@/types/party";
 import type { VendorBill, VendorBillStatus } from "@/types/vendorBill";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 
 const STATUS_VARIANT: Record<VendorBillStatus, "default" | "secondary" | "outline" | "success" | "warning" | "destructive"> = {
@@ -25,7 +26,7 @@ export function VendorBillListPage() {
     listVendorBills().then(setBills);
     listVendors().then((list) => setVendors(Object.fromEntries(list.map((v) => [v.id, v]))));
   };
-  useEffect(refresh, []);
+  useDataRefresh(refresh);
 
   const openBalance = bills.filter((b) => b.status !== "Void").reduce((sum, b) => sum + (b.total - b.paidAmount), 0);
 
