@@ -1,15 +1,30 @@
 import { mockPurchaseOrders } from "@/data/mockPurchaseOrders";
 import { notifyDataChanged } from "@/lib/store/changes";
-import type { PurchaseOrder } from "@/types/purchaseOrder";
+import { NO_CHARGES, type PurchaseOrder } from "@/types/purchaseOrder";
 
 const STORAGE_KEY = "octagem.purchaseOrders.local";
 
+/** Backfills fields added after a record was first persisted — currency, then the job-invoice fields (every older record is a plain stock PO). */
 function migrate(orders: PurchaseOrder[]): { orders: PurchaseOrder[]; changed: boolean } {
   let changed = false;
-  const migrated = orders.map((order) => {
-    if (order.currency) return order;
-    changed = true;
-    return { ...order, currency: "USD", fxRateToBase: 1 };
+  const migrated = orders.map((stored) => {
+    let order = stored;
+    if (!order.currency) {
+      changed = true;
+      order = { ...order, currency: "USD", fxRateToBase: 1 };
+    }
+    if (!order.documentType) {
+      changed = true;
+      order = { ...order, documentType: "PurchaseOrder", charges: { ...NO_CHARGES }, tax: { amount: 0, recoverable: true }, entryMethod: "Typed" };
+    }
+    if (order.lines.some((line) => !line.destination)) {
+      changed = true;
+      order = {
+        ...order,
+        lines: order.lines.map((line) => (line.destination ? line : { ...line, lineType: "Goods" as const, unit: "pcs" as const, destination: { kind: "Stock" as const } })),
+      };
+    }
+    return order;
   });
   return { orders: migrated, changed };
 }

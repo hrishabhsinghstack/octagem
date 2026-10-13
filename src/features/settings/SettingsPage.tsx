@@ -1,5 +1,6 @@
 import { BrandingSettings } from "@/components/settings/BrandingSettings";
 import { BusinessSettings } from "@/components/settings/BusinessSettings";
+import { JobSettings } from "@/components/settings/JobSettings";
 import { InventoryCatalogSettings } from "@/components/settings/catalog/InventoryCatalogSettings";
 import { MasterDataSettings } from "@/components/settings/MasterDataSettings";
 import { ProfileSettings } from "@/components/settings/ProfileSettings";
@@ -28,6 +29,8 @@ export function SettingsPage() {
         return <InventoryCatalogSettings />;
       case "documentTemplates":
         return <DocumentTemplateSettings />;
+      case "jobs":
+        return <JobSettings />;
       case "workflow":
         return <WorkflowSettings />;
       case "users":

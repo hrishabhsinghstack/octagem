@@ -4,6 +4,8 @@ import { CustomerListPage } from "@/features/customers/CustomerListPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { PaymentsListPage } from "@/features/finance/PaymentsListPage";
 import { InventoryListPage } from "@/features/inventory/InventoryListPage";
+import { JobOrderDetailPage } from "@/features/jobs/JobOrderDetailPage";
+import { JobOrderListPage } from "@/features/jobs/JobOrderListPage";
 import { ItemDetailPanel } from "@/features/inventory/ItemDetailPanel";
 import { InvoiceDetailPanel } from "@/features/invoicing/InvoiceDetailPanel";
 import { InvoiceListPage } from "@/features/invoicing/InvoiceListPage";
@@ -36,6 +38,9 @@ export function AppRoutes() {
       <Route path="/inventory" element={<RequirePermission module="inventory"><InventoryListPage /></RequirePermission>}>
         <Route path=":id" element={<ItemDetailPanel />} />
       </Route>
+
+      <Route path="/jobs" element={<RequirePermission module="jobs"><JobOrderListPage /></RequirePermission>} />
+      <Route path="/jobs/:id" element={<RequirePermission module="jobs"><JobOrderDetailPage /></RequirePermission>} />
 
       <Route path="/memos" element={<RequirePermission module="memoOut"><MemoRegisterPage /></RequirePermission>}>
         <Route path=":id" element={<MemoDetailPanel />} />

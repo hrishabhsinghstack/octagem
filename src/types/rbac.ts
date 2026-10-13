@@ -7,6 +7,8 @@ export type PermissionAction = "view" | "create" | "edit" | "delete" | "approve"
 
 export type PermissionModule =
   | "inventory"
+  | "jobs"
+  | "jobCosts"
   | "memoOut"
   | "memoIn"
   | "invoices"
@@ -21,6 +23,9 @@ export type PermissionModule =
 
 export const PERMISSION_MODULES: { key: PermissionModule; label: string }[] = [
   { key: "inventory", label: "Inventory" },
+  { key: "jobs", label: "Job Orders" },
+  // Separate from "jobs" so workshop staff can run jobs without seeing cost and margin. Only "view" is meaningful.
+  { key: "jobCosts", label: "Job Costs (see cost & margin)" },
   { key: "memoOut", label: "Memo Out" },
   { key: "memoIn", label: "Memo In" },
   { key: "invoices", label: "Invoices" },

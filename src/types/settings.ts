@@ -27,3 +27,11 @@ export interface BusinessProfile {
  * and lint-clean while empty.
  */
 export type WorkflowSettings = Record<string, never>;
+
+/** Defaults for jewelry job work (types/jobOrder.ts). Each job and invoice keeps its own copy, so changing these never re-costs history. */
+export interface JobSettings {
+  /** Purchase tax (GST/VAT) can be reclaimed, so it is kept off product cost. Pre-fills each new job invoice. */
+  purchaseTaxRecoverable: boolean;
+  /** Workshop overhead % pre-filled on new job orders. */
+  defaultOverheadPct: number;
+}

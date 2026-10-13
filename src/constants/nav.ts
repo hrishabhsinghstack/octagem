@@ -1,6 +1,6 @@
 import type { PermissionModule } from "@/types/rbac";
 import type { WorkflowSettings } from "@/types/settings";
-import { BarChart3, Building2, CreditCard, Gem, Handshake, LayoutDashboard, PackageCheck, Receipt, ShoppingCart, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Building2, CreditCard, Gem, Hammer, Handshake, LayoutDashboard, PackageCheck, Receipt, ShoppingCart, Users, type LucideIcon } from "lucide-react";
 
 export interface NavItem {
   title: string;
@@ -25,6 +25,10 @@ export const navGroups: NavGroup[] = [
   {
     title: "Inventory",
     children: [{ title: "Inventory", url: "/inventory", icon: Gem, module: "inventory" }],
+  },
+  {
+    title: "Jewelry",
+    children: [{ title: "Job Orders", url: "/jobs", icon: Hammer, module: "jobs" }],
   },
   {
     title: "Purchasing",

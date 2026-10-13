@@ -142,6 +142,10 @@ export function VendorDetailPanel() {
                 <dt className="text-xs text-muted-foreground">Currency</dt>
                 <dd className="font-medium">{vendor.currency || "—"}</dd>
               </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Tax ID</dt>
+                <dd className="font-medium">{vendor.taxId || "—"}</dd>
+              </div>
             </dl>
             {vendor.notes && (
               <>
