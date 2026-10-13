@@ -54,7 +54,38 @@ export interface JobCostEntry {
   /** Set when entered as hours × rate, so the screen can show how the amount was reached. */
   hours?: number;
   ratePerHour?: number;
+  /** StockConsumption / ReturnToStock: the inventory item the material came from or went back to. */
+  inventoryItemId?: string;
+  /** How much was taken (or given back). Absent for a whole UNIQUE item. */
+  quantity?: { pieces?: number; carats?: number };
+  /** ReturnToStock: the consumption it gives back (part of). */
+  reversesEntryId?: string;
+  /** StockConsumption of a whole stone that was then broken or lost in production. The cost stays on the job. */
+  outcome?: "Lost";
   actor: string;
+}
+
+export type CustomerMaterialKind = "Diamond" | "Gemstone" | "Metal" | "Other";
+export type CustomerMaterialStatus = "Held" | "Used" | "Returned";
+
+/**
+ * Material the customer handed over for their own piece (scenario M5) — their stone, their old gold.
+ * Carries no cost: it is a custody record of what we hold for them and what became of it.
+ */
+export interface CustomerMaterial {
+  id: string;
+  receivedAt: string;
+  kind: CustomerMaterialKind;
+  description: string;
+  pieces?: number;
+  carats?: number;
+  grams?: number;
+  certificateNumber?: string;
+  /** What the customer says it is worth — for insurance and the custody slip, never for cost. */
+  declaredValue?: number;
+  status: CustomerMaterialStatus;
+  statusChangedAt?: string;
+  notes: string;
 }
 
 export interface JobActivity {
@@ -80,5 +111,6 @@ export interface JobOrder {
   /** Workshop overhead loaded on top of every other cost, as a percentage. 0 = none. */
   overheadPct: number;
   costEntries: JobCostEntry[];
+  customerMaterials: CustomerMaterial[];
   activity: JobActivity[];
 }

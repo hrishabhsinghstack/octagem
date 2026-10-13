@@ -24,7 +24,7 @@ import type { CustomFieldDefinition } from "@/types/customField";
 import type { InventoryItem, ItemStatus } from "@/types/inventory";
 import { Copy, Handshake, MapPin, MoreVertical, Pencil, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 const STATUS_VARIANT: Record<ItemStatus, "default" | "secondary" | "outline" | "success" | "warning" | "destructive"> = {
   Available: "success",
@@ -32,6 +32,8 @@ const STATUS_VARIANT: Record<ItemStatus, "default" | "secondary" | "outline" | "
   "Verification hold": "outline",
   Sold: "outline",
   "Returned to vendor": "destructive",
+  Consumed: "secondary",
+  Lost: "destructive",
 };
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -468,6 +470,11 @@ export function ItemDetailPanel() {
             <div className="flex items-center gap-3 mt-3">
               <Badge variant={STATUS_VARIANT[item.status]}>{item.status}</Badge>
               {item.ownership === "CONSIGNED_IN" && <Badge variant="outline">Consigned</Badge>}
+              {item.jobId && (
+                <Link to={`/jobs/${item.jobId}`} className="text-sm hover:underline">
+                  {item.status === "Lost" ? "Lost in" : "Used in"} job {item.jobId}
+                </Link>
+              )}
               <span className="text-sm text-muted-foreground flex items-center gap-1">
                 <MapPin className="h-3.5 w-3.5" /> {item.location}
               </span>

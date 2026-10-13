@@ -18,7 +18,11 @@ export type InventoryCategory = string;
 export type IdentityModel = "UNIQUE" | "LOT" | "QUANTITY";
 
 /** "Reserved" was dropped with Sales Orders — allocation was the only thing that ever set it. Stored items still carrying it migrate back to Available; see store/inventoryStore.ts. */
-export type ItemStatus = "Available" | "On memo out" | "Verification hold" | "Sold" | "Returned to vendor";
+/**
+ * "Consumed": used up by a job order (a stone set into a piece, or a parcel emptied). "Lost": broken or
+ * lost during production — kept for the record, never sellable.
+ */
+export type ItemStatus = "Available" | "On memo out" | "Verification hold" | "Sold" | "Returned to vendor" | "Consumed" | "Lost";
 
 /** §2.2/§13.5 — ownership is independent of status: a consigned item is fully sellable (status Available) but not owned until it sells. */
 export type ItemOwnership = "OWNED" | "CONSIGNED_IN";
@@ -216,6 +220,8 @@ export interface InventoryItem {
   /** Provenance — which vendor and (if applicable) purchase order this item was received against. */
   vendorId?: string;
   purchaseOrderId?: string;
+  /** The job order this stone was consumed into (types/jobOrder.ts). Cleared if it goes back to stock. */
+  jobId?: string;
   /** Defaults to OWNED for regular purchases; CONSIGNED_IN items carry no cost layer (cost stays 0) and instead owe the vendor `consignmentValue` if/when they sell (§13.5). */
   ownership: ItemOwnership;
   consignmentValue?: number;

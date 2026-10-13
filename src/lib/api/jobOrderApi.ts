@@ -1,6 +1,7 @@
 import * as purchaseOrderStore from "@/lib/store/purchaseOrderStore";
 import * as store from "@/lib/store/jobOrderStore";
 import { jobIdsForPurchase } from "@/lib/job/costing";
+import { materialsHeld } from "@/lib/job/materials";
 import type { CostBucket, JobActivity, JobCostEntry, JobOrder, JobStatus, JobType } from "@/types/jobOrder";
 
 const DEFAULT_ACTOR = "Jordan Miller";
@@ -63,6 +64,7 @@ export async function createJobOrder(payload: JobOrderPayload, actor = DEFAULT_A
     estimate: {},
     overheadPct: payload.overheadPct,
     costEntries: [],
+    customerMaterials: [],
     activity: [activity("Job order opened.", actor)],
   };
   return store.insert(job);
@@ -85,6 +87,11 @@ export async function updateJobOrder(id: string, payload: JobOrderPayload, actor
 export async function setJobStatus(id: string, status: JobStatus, actor = DEFAULT_ACTOR): Promise<JobOrder | undefined> {
   const job = requireJob(id);
   if (job.status === status) return job;
+  if (status === "Cancelled") {
+    const held = materialsHeld(job);
+    if (held.length > 0) throw new JobOrderError(`Return the stock this job still holds first (${held.map((e) => e.inventoryItemId).join(", ")}), or mark it lost.`);
+    if (job.customerMaterials.some((m) => m.status === "Held")) throw new JobOrderError("The customer's material is still held — mark it returned before cancelling.");
+  }
   return store.update(id, { status, activity: [activity(`Status changed from ${job.status} to ${status}.`, actor), ...job.activity] });
 }
 

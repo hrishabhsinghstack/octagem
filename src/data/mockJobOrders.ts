@@ -24,6 +24,7 @@ export const mockJobOrders: JobOrder[] = [
         actor: "Workshop — R. Fields",
       },
     ],
+    customerMaterials: [],
     activity: [{ id: "JA-seed-1", occurredAt: "2026-09-15", actor: "Jordan Miller", note: "Job order opened." }],
   },
   {
@@ -38,6 +39,20 @@ export const mockJobOrders: JobOrder[] = [
     estimate: {},
     overheadPct: 0,
     costEntries: [],
+    customerMaterials: [
+      {
+        id: "CM-seed-1",
+        receivedAt: "2026-09-25",
+        kind: "Diamond",
+        description: "Customer's own 1.02 ct oval, GIA",
+        pieces: 1,
+        carats: 1.02,
+        certificateNumber: "GIA 6234019921",
+        declaredValue: 8500,
+        status: "Held",
+        notes: "Center stone for the pendant.",
+      },
+    ],
     activity: [{ id: "JA-seed-2", occurredAt: "2026-09-25", actor: "Jordan Miller", note: "Job order opened." }],
   },
 ];

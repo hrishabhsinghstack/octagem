@@ -331,7 +331,8 @@ export function unsetPath<T extends object>(target: T, path: string): T {
 
 /* ---------------------------------------------------------------- uniqueness */
 
-const TERMINAL_STATUSES = new Set(["Sold", "Returned to vendor"]);
+// "Consumed" is not terminal: the stone is still ours, set in a piece, and could come back to stock.
+const TERMINAL_STATUSES = new Set(["Sold", "Returned to vendor", "Lost"]);
 
 export interface UniqueConflict {
   fieldKey: string;

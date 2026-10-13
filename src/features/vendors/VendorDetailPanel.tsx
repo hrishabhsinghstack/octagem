@@ -44,6 +44,8 @@ const ITEM_STATUS_VARIANT: Record<ItemStatus, "default" | "secondary" | "outline
   "Verification hold": "outline",
   Sold: "outline",
   "Returned to vendor": "destructive",
+  Consumed: "secondary",
+  Lost: "destructive",
 };
 
 export function VendorDetailPanel() {
