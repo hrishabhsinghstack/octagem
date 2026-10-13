@@ -109,7 +109,7 @@ Before fixing the data model, here are the real situations a jewelry manufacture
 |---|---|---|
 | P1 | 5 identical rings. | One plan row, qty 5. The user chooses **5 separate pieces** (5 stock numbers; best when stones are certified or sizes differ) or **one stock line × 5** (the existing QUANTITY identity model; best for plain identical items). Both stay linked to the job. |
 | P2 | Mixed output: 2 rings type 1, 3 rings type 2, 4 earrings, 2 pendants, 1 necklace. | One plan row per design, each with its own qty and template. |
-| P3 | Earrings come as a pair. | One product = one pair (Q9). Generated once, components hold both stones. |
+| P3 | Earrings come as a pair. | One product = one pair (Q13). Generated once, components hold both stones. |
 | P4 | **A set** (necklace + earrings sold together). | Products can share a **set code**. Selling them as one set is a later Sales feature, but the link is recorded now. |
 | P5 | ⚠️ **Products finished in batches.** 3 rings this week, 2 next week. | Generate per batch from a plan row ("generate 3 of 5"). Each piece is finished on its own, so the early ones can go on memo while the rest are still in work (using provisional cost). |
 | P6 | ⚠️ **Fewer pieces than planned** (a casting failed; 4 good rings instead of 5). | A piece can be marked **Scrapped**. Its allocated cost is **spread over the good pieces** (default) or written off as job loss. Scrap metal can be noted. |
