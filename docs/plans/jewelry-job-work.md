@@ -1,29 +1,34 @@
 # Jewelry Job Work + AI Invoice Scan — Research & Plan
 
-Status: **plan only, nothing built yet.** Open questions are listed in §8. They need answers before Phase 1 starts.
+Status: **plan only, nothing built yet.** Revised: Job Order is the starting point; invoices are added to the job and saved as POs. Open questions are listed in §8. They need answers before Phase 1 starts.
 
 ---
 
 ## 1. The requirement in one paragraph
 
-A **Job** (like a project, or a "job bag") collects every cost of making a batch of jewelry:
-- diamond purchases (one or many POs)
-- CAD orders (one or many)
-- labour POs: casting, metal/gold, setting, polishing (one or many)
+The user does **not** create purchase orders first. The workflow is:
 
-From one job the user creates **any number and mix of finished products**. For example: 5 identical rings, or 2 type-1 rings + 3 type-2 rings, or rings + earrings + pendants + a necklace. Each product:
-- gets an automatic product (stock) number
-- stays linked to its job
-- carries its share of the job's cost
+1. **Create a Job Order** (like a project, or a "job bag").
+2. **Add every vendor invoice to the job number** as it arrives:
+   - diamond invoices (one or many)
+   - CAD invoices (one or many)
+   - labour invoices: casting, metal/gold, setting, polishing (one or many)
+3. Each invoice added to a job is **saved automatically as a PO record**, linked to that job. It **appears in the normal Purchase Orders list** (with its job number), so purchasing still sees every purchase in one place. Nobody types a PO by hand for job work.
+4. **Create products from the Job Order.** The user can make **any number and mix of finished products**. For example: 5 identical rings, or 2 type-1 rings + 3 type-2 rings, or rings + earrings + pendants + a necklace. Each product:
+   - gets an automatic product (stock) number
+   - stays linked to its job
+   - carries its share of the job's cost
 
-Products then go through the existing **Memo → Invoice** flow unchanged. Jobs sit *before* jewelry inventory: a job is how a piece enters stock.
+Products then go through the existing **Memo → Invoice** flow unchanged. Job Orders sit *before* jewelry inventory: a job is how a piece enters stock.
 
-Separately, an **AI invoice scanner** reads a vendor invoice (PDF or photo) and drafts a purchase order from it:
-- adds the vendor if they don't exist yet
-- picks up the invoice number, date and currency
-- extracts the line items
+An invoice can be added to a job in two ways:
+- **typed in by hand**
+- **scanned by AI.** The AI reads the invoice (PDF or photo) and:
+  - adds the vendor if they don't exist yet
+  - picks up the invoice number, date and currency
+  - extracts the line items
 
-The user reviews the draft before anything is saved.
+  The user reviews everything before it is saved.
 
 ---
 
@@ -36,7 +41,7 @@ The user reviews the draft before anything is saved.
 | **Vendor bills** (`types/vendorBill.ts`) | Created only automatically, when a consigned item sells (`sourceType: "MemoInConversion"`). The comment says manual bills and PO-to-bill matching are "later Purchasing work". | A scanned vendor *invoice* is really a vendor bill (money owed). Decide whether a scan creates a PO only, or a PO plus a bill (Q4). |
 | **Vendors** (`types/party.ts`, `vendorApi.createVendor`) | `{ name, contact, phone, email, address, paymentTerms, currency, notes }`. IDs are `V-1001…`. There is no tax ID field. | Auto-creating a vendor can call `createVendor` as is. Adding `taxId` would make duplicate matching much more reliable. |
 | **Inventory** (`types/inventory.ts`) | `InventoryItem` has `cost`, `vendorId`, `purchaseOrderId`, `ledger[]`. `JewelryAttributes.components[]` is a bill of materials (BOM), and each component can carry `sourceItemId` (the loose stone it was made from). The ledger already has a `PRODUCTION_CONSUMPTION` type. Mock item J-2031 even says *"Assembled from job bag JB-0410"*. | The model was built with manufacturing in mind. A product only needs a `jobId` plus a cost breakdown. Consuming a diamond into a product is already modelled (`sourceItemId` plus the ledger type) but not implemented. |
-| **Stock numbers** (`lib/inventory/stockNumber.ts`) | `nextStockNumber(category, existingCodes)` takes the category's prefix (e.g. `J-`) and works out the next free number. | Reuse it unchanged for automatic product numbers. Job numbers can follow the same pattern as `nextPurchaseOrderId` (`JOB-0001`). |
+| **Stock numbers** (`lib/inventory/stockNumber.ts`) | `nextStockNumber(category, existingCodes)` takes the category's prefix (e.g. `J-`) and works out the next free number. | Reuse it unchanged for automatic product numbers. Job Order numbers can follow the same pattern as `nextPurchaseOrderId` (`JO-0001`). |
 | **Memo / invoice** | Both reference `InventoryItem.id`. | No changes needed. Job products are ordinary jewelry inventory items. |
 | **Nav / routes / RBAC** | `constants/nav.ts` has groups (Inventory, Purchasing, Sales…). `routes/AppRoutes.tsx` uses the list + `:id` detail-panel pattern. `PermissionModule` is a union in `types/rbac.ts`. | Add a **"Jewelry"** nav group with **Jobs**, a `/jobs/:id` route and a `jobs` permission module. |
 | **Review UX to reuse** | Spreadsheet import has plan → review → commit, with batch undo (`features/inventory/import/*`, `ImportBatch`). | The AI scan should copy this pattern: extract → review/fix → commit, and keep a record of each scan so it can be undone. |
@@ -46,13 +51,27 @@ The user reviews the draft before anything is saved.
 
 ## 3. Data model
 
-### 3.1 New: `Job` (`src/types/job.ts`)
+### 3.0 How the records relate
+
+```
+Job Order JO-0001
+ ├─ Invoice #A-778 (Diamond vendor)   ──saved as──▶  PO-3007  (jobId JO-0001, source "JobInvoice")
+ ├─ Invoice #C-12  (CAD designer)     ──saved as──▶  PO-3008  (jobId JO-0001)
+ ├─ Invoice #9931  (Caster: gold+labour) ─saved as─▶ PO-3009  (jobId JO-0001)
+ └─ Products: J-2101 … J-2112          (each item.jobId = JO-0001, cost allocated from the POs above)
+
+Purchase Orders list  →  shows PO-3007/3008/3009 alongside normal POs, with a "Job" column + filter
+```
+
+**One invoice = one PO = one job.** The invoice is the source document; the PO is how it's stored and listed. This reuses the whole Purchasing module (list, detail, print, vendor link, currency/FX) rather than building a second purchases table.
+
+### 3.1 New: `JobOrder` (`src/types/jobOrder.ts`)
 
 ```ts
 export type JobStatus = "Open" | "In production" | "Completed" | "Closed" | "Cancelled";
 
-export interface Job {
-  id: string;                 // JOB-0001 (format: see Q6)
+export interface JobOrder {
+  id: string;                 // JO-0001 (format: see Q6)
   title: string;              // "Bridal set — Smith order"
   customerId?: string;        // set for a custom/customer order, empty for stock production (Q2)
   status: JobStatus;
@@ -71,9 +90,9 @@ export interface Job {
 }
 ```
 
-The job does **not** store its own list of purchase orders. The link lives on the PO lines (`jobId`), so it has one source of truth and one PO can split across jobs (Q7).
+The job does **not** store its own list of invoices. The link lives on the PO (`jobId`), so there is one source of truth: the job's invoices are simply "POs where `jobId` = this job".
 
-### 3.2 Changes to `PurchaseOrder`
+### 3.2 Changes to `PurchaseOrder` (so it can hold a job invoice)
 
 ```ts
 export type PurchaseOrderLineType =
@@ -86,21 +105,27 @@ export interface PurchaseOrderLine {
   lineType: PurchaseOrderLineType;          // migrate existing lines to "Stock"
   serviceKind?: string;                     // master list "jobCostTypes": CAD, Casting, Setting, Polishing, Labour, Rhodium, Other
   unit: "pcs" | "ct" | "g" | "hrs" | "lot"; // expectedQty is in this unit
-  jobId?: string;                           // defaults from header jobId, can be overridden per line
+  /** Optional: charge this line to one product design only (e.g. CAD for style A). See §4. */
+  productPlanId?: string;
 }
 
 export interface PurchaseOrder {
   // ...existing fields
-  jobId?: string;                 // default job for new lines
-  vendorInvoiceNumber?: string;   // what the scanner extracts; duplicate-checked per vendor
+  jobId?: string;                 // set for every PO created from a job invoice
+  vendorInvoiceNumber?: string;   // required for job invoices; duplicate-checked per vendor
   vendorInvoiceDate?: string;
-  source: "Manual" | "InvoiceScan";
+  /** The invoice's own tax/shipping/total, so the stored PO matches the paper invoice to the cent. */
+  invoiceTotals?: { subtotal: number; tax: number; shipping: number; discount: number; total: number };
+  source: "Manual" | "JobInvoice";
+  entryMethod?: "Typed" | "AIScan";
   scanId?: string;                // links to the InvoiceScan record (§6.4)
 }
 ```
 
-- Status for **Service/Metal** lines: there is nothing to receive. Mark them "received" when the work is done (one click, or automatically when created from an invoice scan, because an invoice means the work was delivered).
-- `deriveStatus()` must treat these lines as fulfilled once `receivedQty === expectedQty`.
+- **Status.** An invoice means the goods or work were delivered, so a job-invoice PO is created as **"Received"** for Service/Metal lines. `Stock` lines (diamonds) follow Q1: either received into inventory straight from the job, or cost only.
+- `deriveStatus()` must treat Service/Metal lines as fulfilled once `receivedQty === expectedQty`.
+- **Editing.** A job-invoice PO can be opened from the PO list as normal. Its detail panel shows a *"From job JO-0001 · Invoice #A-778"* banner and link. Edits go through the same "Edit invoice" form the job uses, so both screens can't drift apart.
+- **Deleting.** Deleting a job-invoice PO removes the invoice from the job and re-runs the job's cost allocation. It is blocked once the job is Closed.
 - Migrations go in `purchaseOrderStore.migrate()`, following the existing pattern (`lineType: "Stock"`, `unit: "pcs"`, `source: "Manual"`).
 
 ### 3.3 Product plans and generated products
@@ -149,7 +174,7 @@ There are two kinds of stones, and they should be handled differently:
 ## 4. Job costing (the main point of the feature)
 
 **Job total cost** (base currency) =
-- Σ (PO lines with `jobId = job`) × the PO's `fxRateToBase`
+- Σ (lines of every invoice/PO with `jobId = job`) × that PO's `fxRateToBase`
 - \+ the cost of any existing stock stones consumed into the job's products (stones that weren't bought on a job PO)
 
 **Per-product cost:**
@@ -178,10 +203,11 @@ There are two kinds of stones, and they should be handled differently:
 | Screen | Contents |
 |---|---|
 | **Nav: "Jewelry" group** | `Jobs` (`/jobs`). This is also where "Scan invoice" lives (it is also reachable from Purchase Orders). |
-| **Job list** | Number, title, customer, status, # POs, # products, total cost, target date. Filters by status. |
-| **Job detail** (side panel like the other modules, or a full page because there's a lot in it) | Tabs: **Overview** (cost summary + allocation method) · **Purchase orders** (linked lines grouped by PO; buttons for *New PO for this job* and *Scan invoice into this job*; *Link existing PO*) · **Materials** (stones received/consumed) · **Products** (plan rows → *Generate*; generated items with cost; *Finish*) · **Files** (CAD/photos) · **Activity** |
-| **Create PO dialog** | Adds a Job selector (header), plus per-line type / service kind / unit. |
-| **Item detail** | Adds a "Job JOB-0001" link and the cost-breakdown card. |
+| **Job Order list** | Number, title, customer, status, # invoices, # products, total cost, target date. Filters by status. Primary button: **New Job Order**. |
+| **Job detail** (side panel like the other modules, or a full page because there's a lot in it) | Tabs: **Overview** (cost summary + allocation method) · **Invoices** (every invoice on the job: vendor, invoice #, date, type, amount, its PO number; buttons **Add invoice** (type it in) and **Scan invoice (AI)**) · **Materials** (stones received/consumed) · **Products** (plan rows → *Generate*; generated items with cost; *Finish*) · **Files** (CAD/photos) · **Activity** |
+| **Add invoice dialog** (new; used by the job, and by PO edit for job invoices) | Vendor (pick or create inline), invoice #, invoice date, currency, lines (type / service kind / description / qty / unit / unit price), tax / shipping / total. Saving creates the PO with `jobId` + `source: "JobInvoice"`. The AI scan pre-fills this same dialog. |
+| **Purchase Orders list** | Unchanged for normal POs. Adds a **Job** column, a **Vendor invoice #** column, a "Job invoices only / Standard POs only" filter, and a source badge. Clicking a job invoice opens the PO detail with a link back to the job. The existing *Create PO* dialog stays for normal (non-job) buying. |
+| **Item detail** | Adds a "Job Order JO-0001" link and the cost-breakdown card. |
 | **Reports** | Job cost summary; cost per product; open jobs ageing. |
 | **RBAC** | New `jobs` permission module. Generate/finish products uses `jobs.create`/`jobs.edit` plus `inventory.create`. Close job uses `jobs.approve`. |
 
@@ -240,7 +266,7 @@ The function is **stateless**: it only turns a file into JSON. All matching and 
 
 ### 6.3 Review flow ("smart, but always confirmed")
 
-1. **Upload** from the Job's PO tab (the job is pre-selected) or from Purchase Orders. Multiple files can be queued.
+1. **Upload** from the Job Order's **Invoices** tab (**Scan invoice (AI)**), so the job is already known. Multiple files can be queued, one per invoice.
 2. **Extract.** Show a spinner, with the document preview beside the form.
 3. **Vendor match.** Check in this order: exact tax ID, then email/domain, then a normalised fuzzy name match ("Shree Diam. Pvt Ltd" ≈ "Shree Diamonds Private Limited").
    - Show "Matched: V-1004" or "**New vendor**: create" with the details pre-filled and editable.
@@ -251,10 +277,10 @@ The function is **stateless**: it only turns a file into JSON. All matching and 
    - Cross-check in code (not by the AI): qty × price ≈ amount, Σ lines ≈ subtotal, subtotal + tax + shipping ≈ total. Show any mismatch in amber.
    - Certificate numbers are checked against inventory using the existing uniqueness rule (`findUniqueConflicts`).
    - Unknown master-list values (e.g. clarity "SI-1") use the import "means → pick value" fixer.
-6. **Job.** Pick the job (or "new job"). Lines can be reassigned to other jobs.
+6. **Job.** Already set from the job the user is on. If the vendor printed a different job/reference number, show it as a warning.
 7. **Commit**, in one go:
    1. Create the vendor if new.
-   2. Create the PO with `source: "InvoiceScan"` and the invoice number/date. Service/Metal lines are marked received.
+   2. Save through the same path as a typed invoice: the PO is created with `jobId`, `source: "JobInvoice"`, `entryMethod: "AIScan"` and the invoice number/date. Service/Metal lines are marked received. It appears on the job **and** in the PO list.
    3. Optionally create a Vendor Bill (Q4).
    4. `Stock` lines are left ready to receive through the existing *Receive* dialog, pre-filled with the extracted diamond attributes.
 
@@ -275,13 +301,14 @@ The function is **stateless**: it only turns a file into JSON. All matching and 
 
 ## 7. Delivery phases
 
+Re-ordered around the Job Order being the starting point.
+
 | Phase | Scope | Notes |
 |---|---|---|
-| **1. Purchasing foundations** | PO line type/unit/serviceKind/jobId, `vendorInvoiceNumber`, migrations, updated Create PO dialog and PO detail (service lines "mark done"), `taxId` on Vendor, `jobCostTypes` master list. | Useful on its own; no job UI yet. |
-| **2. Jobs module** | `Job` type/store/API, Jewelry nav group, `jobs` RBAC module, job list + detail (Overview, POs, Files, Activity), link POs to jobs, job cost summary in base currency. | |
-| **3. Products & costing** | Product plans → generate items (automatic numbers, `jobId`, "In production" status), consume certified stones via BOM `sourceItemId`, allocation engine (`lib/job/allocation.ts` with unit tests), `costBreakdown` on items, close job / provisional flag, job-cost reports. | The heaviest phase. The allocation maths must be test-covered. |
-| **4. AI invoice scan** | Serverless `/api/scan-invoice`, extraction schema + prompt, upload/review UI, vendor matching, duplicate guard, arithmetic checks, PO (+bill) creation, `InvoiceScan` history/undo. | Needs hosting and an API key (Q5). Can be built in parallel with Phase 3 once Phase 1 is done. |
-| **5. Hardening** | Vendor bills from POs (PO ↔ bill matching), accuracy test set from saved scans, multi-page/batch scanning, metal stock by grams (optional). | |
+| **1. Job Orders + manual invoices** | `JobOrder` type/store/API; Jewelry nav group; `jobs` RBAC module; Job Order list + detail (Overview, Invoices, Files, Activity). **Add invoice** dialog, which creates the PO record (with `jobId`, `vendorInvoiceNumber`, `source: "JobInvoice"`). PO model changes: line type, unit, service kind, invoice totals, plus migrations. PO list gets the Job column, filter and badge; PO detail gets the "From job" banner. Duplicate invoice # guard. `taxId` on Vendor. `jobCostTypes` master list. Job cost total in base currency. | Delivers the whole "job → invoices → shows in PO list" flow, typed by hand. |
+| **2. Products & costing** | Product plans → generate items (automatic numbers, `jobId`, "In production" status). Consume certified stones via BOM `sourceItemId`. Allocation engine (`lib/job/allocation.ts` with unit tests). `costBreakdown` on items. Close job / provisional flag. Job-cost reports. | The heaviest phase. The allocation maths must be test-covered. |
+| **3. AI invoice scan** | Serverless `/api/scan-invoice`, extraction schema + prompt, **Scan invoice (AI)** button that pre-fills the Phase 1 *Add invoice* dialog, vendor matching / auto-create, arithmetic checks, `InvoiceScan` history/undo. | Needs hosting and an API key (Q5). Can be built in parallel with Phase 2 once Phase 1 is done. |
+| **4. Hardening** | Vendor bills from POs (PO ↔ bill matching), accuracy test set from saved scans, multi-page/batch scanning, metal stock by grams (optional). | |
 
 ---
 
@@ -290,9 +317,9 @@ The function is **stateless**: it only turns a file into JSON. All matching and 
 1. **Diamonds for a job.** Should certified stones be received into inventory first and then consumed into the product (recommended, traceable)? Or only costed to the job, never stocked?
 2. **Job ↔ customer.** Are jobs sometimes for a specific customer order and sometimes for stock? Should a job carry a customer?
 3. **Default cost split.** For pooled costs (metal, casting, labour, CAD): by metal weight (recommended), equal per piece, or a manual %?
-4. **Scanned invoice = PO only, or PO + Vendor Bill?** An invoice is money owed. Creating a bill as well puts it in Vendor Bills/payments.
+4. **Job invoice = PO only, or PO + Vendor Bill?** An invoice is money owed. Creating a bill as well puts it in Vendor Bills/payments, so you can track what is still unpaid to each vendor.
 5. **Hosting and API key.** Where is the app deployed (Vercel?), and will you provide an Anthropic API key for the serverless function?
-6. **Job number format.** `JOB-0001`, `JB-0001` (the mock data already says "job bag JB-0410"), or configurable per tenant?
-7. **One PO across several jobs?** For example, one diamond invoice covering stones for 3 jobs. The plan supports a job per line; confirm it's needed.
+6. **Job Order number format.** `JO-0001`, `JB-0001` (the mock data already says "job bag JB-0410"), or configurable per tenant?
+7. **One invoice across several jobs?** For example, one diamond invoice covering stones for 3 jobs. The plan assumes one invoice belongs to one job. If that happens, can the user split it (add it to each job with only that job's lines), or do you need a line-by-line split on a single invoice?
 8. **Gold.** Do you buy gold yourselves and give it to the caster (which means tracking metal stock in grams), or does the caster supply the metal and bill for it? The plan assumes the caster supplies it, for now.
 9. **Earrings.** Is one pair one product (one stock number)? The plan assumes yes.
