@@ -16,6 +16,8 @@ export interface Vendor {
   address: string;
   paymentTerms: string;
   currency: string;
+  /** GST/VAT/EIN — the most reliable key for matching a vendor on an incoming invoice. */
+  taxId?: string;
   notes: string;
   createdAt: string;
 }

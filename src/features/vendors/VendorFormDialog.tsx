@@ -8,7 +8,7 @@ import { showError, showSuccess } from "@/lib/utils";
 import type { Vendor } from "@/types/party";
 import { useEffect, useState } from "react";
 
-const EMPTY: VendorPayload = { name: "", contact: "", phone: "", email: "", address: "", paymentTerms: "Net 30", currency: "USD", notes: "" };
+const EMPTY: VendorPayload = { name: "", contact: "", phone: "", email: "", address: "", paymentTerms: "Net 30", currency: "USD", taxId: "", notes: "" };
 
 function Field({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
   return (
@@ -86,9 +86,14 @@ export function VendorFormDialog({ open, onOpenChange, vendor, onSaved }: Vendor
               <Input value={form.paymentTerms} onChange={set("paymentTerms")} placeholder="Net 30" />
             </Field>
           </div>
-          <Field label="Address">
-            <Input value={form.address} onChange={set("address")} />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Address">
+              <Input value={form.address} onChange={set("address")} />
+            </Field>
+            <Field label="Tax ID (GST / VAT / EIN)">
+              <Input value={form.taxId ?? ""} onChange={set("taxId")} />
+            </Field>
+          </div>
           <Field label="Notes">
             <Textarea value={form.notes} onChange={set("notes")} rows={2} />
           </Field>

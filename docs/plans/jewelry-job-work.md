@@ -1,6 +1,6 @@
 # Jewelry Job Work + AI Invoice Scan — Research & Plan
 
-Status: **plan only, nothing built yet.** Revised: Job Order is the starting point; invoices are added to the job and saved as POs. The scenario walkthrough is in §3 and the open questions are in §9. They need answers before Phase 1 starts.
+Status: **Phase 1 built** (see §8.1). Phases 2–5 not started. Revised: Job Order is the starting point; invoices are added to the job and saved as POs. The scenario walkthrough is in §3 and the open questions are in §9. They need answers before Phase 1 starts.
 
 ---
 
@@ -429,6 +429,38 @@ The function is **stateless**: it only turns a file into JSON. All matching and 
 | **3. Products & costing** | Product plans (separate pieces vs. quantity line), batch generation, finish/scrap, set code; rework jobs (bring existing items in); allocation engine `lib/job/allocation.ts` (direct → per design → pooled → scrap) with thorough unit tests; provisional/final; close, reopen, cancel, variance; "Invoice customer" from a job; reports. | J2, J3, P1–P8, P10, I9, L1–L4 |
 | **4. AI invoice scan** | Serverless `/api/scan-invoice`; schema + prompt; **Scan invoice (AI)** pre-fills the Phase 1 dialog; vendor matching/auto-create; arithmetic checks; proforma → estimate, credit note detection; `InvoiceScan` history/undo. | Same scenarios as Phase 1, read from a file instead of typed. Can start once Phase 1 is done, in parallel with 2–3. |
 | **5. Later** | Metal ledger (own gold issued to caster, returns, loss %, old gold); CAD/mould cost amortised per style; repair jobs for customer pieces; vendor bills & payments from invoices (if Q10 = yes, this moves into Phase 1); job merge/split. | M7, M8, P9, J4, I12, L5 |
+
+### 8.1 Phase 1 — what was built
+
+- **Job Orders** under a new *Jewelry* nav group (`/jobs`, `/jobs/:id`): create/edit (type, title, customer, target date, overhead %), status, delete-when-empty.
+  - The job page has these tabs: **Costs** (ledger), **Invoices**, **Estimate vs actual** and **Activity**.
+- **Add invoice** (`features/jobs/JobInvoiceDialog.tsx`), used from the job page and when editing from the PO list:
+  - invoice or credit note, with an inline "new vendor" form
+  - vendor invoice # and date, currency
+  - each line: type, cost type, qty, unit, price, and **goes to** (any open job, or stock)
+  - shipping / insurance / duty / other / discount, tax with a "can be claimed back" switch
+  - an optional paper-total check, a live per-job cost preview, and a duplicate-invoice block
+- **Saved as a PO** (`createJobInvoice` / `updateJobInvoice` / `deleteJobInvoice` in `lib/api/purchaseOrderApi.ts`).
+  - The **Purchase Orders list** gains Document / Job(s) / Total columns and filters.
+  - **PO detail** shows a "Charged to JO-…" banner, where each line goes, charges and tax, and edit/delete. *Receive* appears only on stock lines.
+- **Internal costs** (hours × rate or a fixed amount) and **workshop overhead %**.
+- **Costing** (`lib/job/costing.ts`):
+  - The ledger is built on read; it is never stored.
+  - Charges, and tax that can't be claimed back, are spread by value.
+  - Credit notes are negative; cancelled documents are ignored.
+  - Totals are in base currency at each document's captured rate.
+- **Permissions:** new `jobs` module, plus a separate `jobCosts` module ("see cost & margin"). Roles without `jobCosts` see invoices but no amounts.
+- **Settings → Job Orders:** default "purchase tax can be claimed back" and default overhead %.
+- **Vendor tax ID** field.
+- **Tests:** `lib/job/costing.test.ts` and `lib/api/jobOrderApi.test.ts`.
+
+**Differences from the plan above:**
+- Cost types are a **fixed list** (`COST_BUCKETS`) rather than a master list, because breakdowns and reports group by them.
+- Cost visibility is a separate **`jobCosts` module** rather than a new `viewCost` action, which would have added a meaningless checkbox to every other module in the role editor.
+- Line type `Stock` was renamed **`Goods`**, so it isn't confused with the *Stock* destination.
+- Not in Phase 1:
+  - **Closed** status and freezing product costs (Phase 3)
+  - a **Files** tab (needs real file storage, §7.5)
 
 ---
 

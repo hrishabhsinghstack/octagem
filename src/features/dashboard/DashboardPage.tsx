@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Building2,
   Clock,
+  Hammer,
   Handshake,
   History,
   Landmark,
@@ -44,6 +45,7 @@ const TYPE_ICON: Record<RecentActivityType, LucideIcon> = {
   memoIn: PackagePlus,
   customer: User,
   vendor: Building2,
+  jobOrder: Hammer,
 };
 
 const AGING_THRESHOLD_DAYS = 90;

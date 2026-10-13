@@ -1,4 +1,4 @@
-import type { BusinessProfile, UserProfile, WorkflowSettings } from "@/types/settings";
+import type { BusinessProfile, JobSettings, UserProfile, WorkflowSettings } from "@/types/settings";
 
 /**
  * localStorage-backed for now — no backend exists yet (OCTAGEM-BLUEPRINT.md §38). Function
@@ -8,6 +8,7 @@ import type { BusinessProfile, UserProfile, WorkflowSettings } from "@/types/set
 const PROFILE_KEY = "octagem.profile.local";
 const BUSINESS_KEY = "octagem.business.local";
 const WORKFLOW_KEY = "octagem.workflow.local";
+const JOB_SETTINGS_KEY = "octagem.jobSettings.local";
 
 const DEFAULT_PROFILE: UserProfile = { firstName: "Jordan", lastName: "Miller", email: "jordan@octagem.demo", phone: "" };
 const DEFAULT_BUSINESS: BusinessProfile = {
@@ -61,5 +62,21 @@ export async function getWorkflowSettings(): Promise<WorkflowSettings> {
 
 export async function updateWorkflowSettings(settings: WorkflowSettings): Promise<WorkflowSettings> {
   localStorage.setItem(WORKFLOW_KEY, JSON.stringify(settings));
+  return settings;
+}
+
+const DEFAULT_JOB_SETTINGS: JobSettings = { purchaseTaxRecoverable: true, defaultOverheadPct: 0 };
+
+export async function getJobSettings(): Promise<JobSettings> {
+  try {
+    const raw = localStorage.getItem(JOB_SETTINGS_KEY);
+    return raw ? { ...DEFAULT_JOB_SETTINGS, ...JSON.parse(raw) } : DEFAULT_JOB_SETTINGS;
+  } catch {
+    return DEFAULT_JOB_SETTINGS;
+  }
+}
+
+export async function updateJobSettings(settings: JobSettings): Promise<JobSettings> {
+  localStorage.setItem(JOB_SETTINGS_KEY, JSON.stringify(settings));
   return settings;
 }
