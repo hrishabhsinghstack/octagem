@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/authContext";
 import { InternalCostDialog } from "@/features/jobs/InternalCostDialog";
 import { JobInvoiceDialog } from "@/features/jobs/JobInvoiceDialog";
+import { JobMaterialsTab } from "@/features/jobs/JobMaterialsTab";
 import { JobOrderFormDialog } from "@/features/jobs/JobOrderFormDialog";
 import { DOCUMENT_TYPE_LABEL, DOCUMENT_TYPE_VARIANT, JOB_STATUS_VARIANT, JOB_STATUSES, JOB_TYPE_LABEL, LEDGER_SOURCE_LABEL } from "@/features/jobs/jobLabels";
 import { useBaseCurrency } from "@/hooks/useBaseCurrency";
@@ -100,8 +101,12 @@ export function JobOrderDetailPage() {
 
   const changeStatus = async (status: JobStatus) => {
     if (status === "Cancelled" && !window.confirm(`Cancel ${job.id}? Its invoices stay in Purchase Orders, but no new costs can be added.`)) return;
-    await setJobStatus(job.id, status);
-    showSuccess("Status updated", `${job.id} is now ${status}.`);
+    try {
+      await setJobStatus(job.id, status);
+      showSuccess("Status updated", `${job.id} is now ${status}.`);
+    } catch (error: any) {
+      showError("Can't change status", error?.message);
+    }
   };
 
   const handleDelete = async () => {
@@ -206,7 +211,7 @@ export function JobOrderDetailPage() {
 
       {canSeeCost && (
         <div className="grid grid-cols-3 gap-4">
-          <Stat label="Cost so far" value={formatCurrency(summary.total, baseCurrency)} sub={`${summary.documentCount} document${summary.documentCount === 1 ? "" : "s"} · ${job.costEntries.length} internal`} />
+          <Stat label="Cost so far" value={formatCurrency(summary.total, baseCurrency)} sub={`${summary.documentCount} document${summary.documentCount === 1 ? "" : "s"} · ${job.costEntries.filter((e) => e.source === "Internal").length} internal`} />
           <Stat label="Estimate" value={summary.estimateTotal ? formatCurrency(summary.estimateTotal, baseCurrency) : "—"} sub={summary.estimateTotal ? undefined : "Set one on the Estimate tab"} />
           <Stat
             label={variance > 0 ? "Over estimate" : "Under estimate"}
@@ -220,6 +225,7 @@ export function JobOrderDetailPage() {
         <TabsList>
           {canSeeCost && <TabsTrigger value="costs">Costs</TabsTrigger>}
           <TabsTrigger value="invoices">Invoices ({documents.length})</TabsTrigger>
+          <TabsTrigger value="materials">Materials</TabsTrigger>
           {canSeeCost && <TabsTrigger value="estimate">Estimate vs actual</TabsTrigger>}
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
@@ -384,6 +390,10 @@ export function JobOrderDetailPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="materials">
+          <JobMaterialsTab job={job} baseCurrency={baseCurrency} canSeeCost={canSeeCost} canEdit={canEdit} canMoveStock={canEdit && can("inventory", "edit")} onChanged={load} />
         </TabsContent>
 
         {canSeeCost && (

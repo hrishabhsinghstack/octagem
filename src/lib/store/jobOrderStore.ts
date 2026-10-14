@@ -4,10 +4,15 @@ import type { JobOrder } from "@/types/jobOrder";
 
 const STORAGE_KEY = "octagem.jobOrders.local";
 
+/** Backfills fields added after a job was first saved. */
+function migrate(jobs: JobOrder[]): JobOrder[] {
+  return jobs.map((job) => (job.customerMaterials ? job : { ...job, customerMaterials: [] }));
+}
+
 function readAll(): JobOrder[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as JobOrder[];
+    if (raw) return migrate(JSON.parse(raw) as JobOrder[]);
   } catch {
     // fall through to reseed
   }

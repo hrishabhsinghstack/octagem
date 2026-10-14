@@ -1,6 +1,6 @@
 # Jewelry Job Work + AI Invoice Scan — Research & Plan
 
-Status: **Phase 1 built** (see §8.1). Phases 2–5 not started. Revised: Job Order is the starting point; invoices are added to the job and saved as POs. The scenario walkthrough is in §3 and the open questions are in §9. They need answers before Phase 1 starts.
+Status: **Phases 1–2 built** (see §8.1, §8.2). Phases 3–5 not started. Revised: Job Order is the starting point; invoices are added to the job and saved as POs. The scenario walkthrough is in §3 and the open questions are in §9. They need answers before Phase 1 starts.
 
 ---
 
@@ -461,6 +461,23 @@ The function is **stateless**: it only turns a file into JSON. All matching and 
 - Not in Phase 1:
   - **Closed** status and freezing product costs (Phase 3)
   - a **Files** tab (needs real file storage, §7.5)
+
+### 8.2 Phase 2 — what was built
+
+- **Materials tab** on the job (`features/jobs/JobMaterialsTab.tsx`, `MaterialDialogs.tsx`), with the logic in `lib/api/jobMaterialsApi.ts` and the pure maths in `lib/job/materials.ts`. It covers:
+  - **Use from stock (M1, M2, M3, M10).**
+    - A whole stone becomes *Consumed* (new status). It keeps its own cost, and that cost goes to the job.
+    - For a parcel, you take carats and/or pieces. The cost is priced by the carat when the parcel has a weight, otherwise by pieces. The parcel's carats, pieces and cost go down, and it becomes *Consumed* when emptied.
+    - Only available stock you own can be used. Consigned stones are refused.
+  - **Return to stock (M4).** All or part of what was taken goes back at the rate it was taken, never more than is still out.
+  - **Mark lost (M9).** A whole stone becomes *Lost* (new status). Its cost stays on the job and the cost list labels it "lost in production".
+  - **Leftover to stock (M4).** Material bought straight onto a job that wasn't all used becomes a **new stock parcel**, and its value comes off the job. The value can't exceed what the job has cost.
+  - **Customer's material (M5).** Records what the customer handed over, at no cost: kind, quantity, certificate, declared value. Status: held → used in the piece / returned to customer.
+- **Item history:** every move writes the inventory item's history (`PRODUCTION_CONSUMPTION` / `TRANSFER`) and the job's cost list. A consumed or lost item links back to its job.
+- **Inventory:** the status filter gains *Consumed into a job* and *Lost*. Memo and invoice already only offer *Available* stock.
+- **Cancelling a job** is refused while it still holds stock, or while the customer's material is still held. This is part of L4; returning stock automatically on cancel comes with Phase 3.
+- **Demo data:** melee parcel D-1125 (3.00 ct / 220 pcs, $1,950); a customer stone on JO-0002.
+- **Tests:** `lib/api/jobMaterialsApi.test.ts`.
 
 ---
 

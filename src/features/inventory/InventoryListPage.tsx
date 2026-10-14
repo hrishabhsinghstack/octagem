@@ -32,6 +32,8 @@ const STATUS_VARIANT: Record<ItemStatus, "default" | "secondary" | "outline" | "
   "Verification hold": "outline",
   Sold: "outline",
   "Returned to vendor": "destructive",
+  Consumed: "secondary",
+  Lost: "destructive",
 };
 
 export function InventoryListPage() {
@@ -190,6 +192,8 @@ export function InventoryListPage() {
               <SelectItem value="On memo out">On memo out</SelectItem>
               <SelectItem value="Verification hold">Verification hold</SelectItem>
               <SelectItem value="Sold">Sold</SelectItem>
+              <SelectItem value="Consumed">Consumed into a job</SelectItem>
+              <SelectItem value="Lost">Lost</SelectItem>
             </SelectContent>
           </Select>
         </div>

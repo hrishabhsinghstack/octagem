@@ -118,7 +118,7 @@ export function buildJobLedger(job: Pick<JobOrder, "id" | "costEntries" | "overh
       occurredAt: entry.occurredAt,
       source: entry.source,
       bucket: entry.bucket,
-      description: entry.description,
+      description: entry.outcome === "Lost" ? `${entry.description} — lost in production` : entry.description,
       amountBase: round2(entry.amountBase),
       costEntryId: entry.id,
     });
